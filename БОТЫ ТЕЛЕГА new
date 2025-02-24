@@ -1,0 +1,197 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/BoogieBitches/Bugatti-Music/blob/main/%D0%91%D0%9E%D0%A2%D0%AB%20%D0%A2%D0%95%D0%9B%D0%95%D0%93%D0%90%20new\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import os\n",
+        "import telebot\n",
+        "import speech_recognition\n",
+        "from pydub import AudioSegment\n",
+        "\n",
+        "token = \"7834981791:AAHlR_bd1v2QQf7-nCScBcGRfcqRBEPPzV8\"\n",
+        "\n",
+        "bot = telebot.TeleBot(token)\n",
+        "\n",
+        "\n",
+        "def oga2wav(filename):\n",
+        "    new_filename = filename.replace('.oga', '.wav')\n",
+        "    audio = AudioSegment.from_file(filename)\n",
+        "    audio.export(new_filename, format='wav')\n",
+        "    return new_filename\n",
+        "\n",
+        "def recognize_speech(oga_filename):\n",
+        "    wav_filename = oga2wav(oga_filename)\n",
+        "    recognizer = speech_recognition.Recognizer()\n",
+        "    with speech_recognition.WavFile(wav_filename) as source:    # Добавлено двоеточие\n",
+        "        wav_audio = recognizer.record(source)                   # Добавлена запись аудио\n",
+        "        text = recognizer.recognize_google(wav_audio, language='ru')\n",
+        "        if os.path.exists(oga_filename):\n",
+        "            os.remove(oga_filename)\n",
+        "        if os.path.exists(wav_filename):\n",
+        "            os.remove(wav_filename)\n",
+        "        return text\n",
+        "\n",
+        "def download_file(bot, file_id):\n",
+        "  file_info = bot.get_file(file_id)\n",
+        "  downloaded_file = bot.download_file(file_info.file_path)\n",
+        "  filename = file_id + file_info.file_path\n",
+        "  filename = filename.replace('/','_')\n",
+        "  with open (filename, 'wb') as f:\n",
+        "    f.write(downloaded_file)\n",
+        "    return filename\n",
+        "@bot.message_handler (commands=['start'])\n",
+        "def say_hi(message):\n",
+        "  bot.send_message(message.chat.id, 'привет')\n",
+        "\n",
+        "\n",
+        "@bot.message_handler(content_types=['voice'])\n",
+        "def transcript(message):\n",
+        "  filename = download_file(bot, message.voice.file_id)\n",
+        "  text = recognize_speech(filename)\n",
+        "  bot.send_message(message.chat.id, text)\n",
+        "\n",
+        "\n",
+        "bot.polling()"
+      ],
+      "metadata": {
+        "id": "7jjQqmU3NMe9"
+      },
+      "execution_count": 29,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [],
+      "metadata": {
+        "id": "Nz2qb4uMRFAC"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import urllib\n",
+        "url = \"https://drive.google.com/file/d/1leyL7MW1YH6i26PVBwbQBiS9HpcTsEiE/view?usp=share_link\"\n",
+        "filename = \"bugatti.wav\"\n",
+        "urllib.request.urlretrieve(url, filename)"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "ZxNuObveiRW8",
+        "outputId": "d0f3ce6c-0947-47d1-eaea-bcb884f81d75"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "('bugatti.wav', <http.client.HTTPMessage at 0x7c53801da790>)"
+            ]
+          },
+          "metadata": {},
+          "execution_count": 50
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import speech_recognition"
+      ],
+      "metadata": {
+        "id": "2uAf0fn8lEFw"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "recognizer = speech_recognition.Recognizer()\n",
+        "with speech_recognition.WavFile('bugatti.wav') as source:\n",
+        "    wav_audio = recognizer.record(source)\n",
+        "recognizer.recognize_google(wav_audio, language='ru')"
+      ],
+      "metadata": {
+        "id": "P4xCpgV7lc3J"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [],
+      "metadata": {
+        "id": "gwdzBCuhlS-X"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "bot = telebot.TeleBot(token)\n",
+        "\n",
+        "def download_file(bot, file_id):\n",
+        "  file_info = bot.get_file(file_id)\n",
+        "  downloaded_file = bot.download_file(file_info.file_path)\n",
+        "  filename = file_id + file_info.file_path\n",
+        "  filename = filename.replace('/','_')\n",
+        "  with open (filename, 'wb') as f:\n",
+        "    f.write(downloaded_file)\n",
+        "    return filename\n",
+        "@bot.message_handler(content_types=['photo'])\n",
+        "def resend_photo(message):\n",
+        "    file_id = message.photo[-1].file_id\n",
+        "    filename = download_file(bot, file_id)\n",
+        "    with open(filename, 'rb') as image:        # все операции с файлом внутри with\n",
+        "        bot.send_photo(message.chat.id, image)\n",
+        "    if os.path.exists(filename):               # удаление файла после отправки\n",
+        "        os.remove(filename)\n",
+        "\n",
+        "bot.polling()"
+      ],
+      "metadata": {
+        "id": "pBf_0HWNHb2H"
+      },
+      "execution_count": 47,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import urllib\n",
+        "url = \"https://drive.google.com/file/d/1leyL7MW1YH6i26PVBwbQBiS9HpcTsEiE/view?usp=share_link\"\n",
+        "filename = \"bugatti.wav\"\n",
+        "urllib.request.urlretrieve(url, filename)"
+      ],
+      "metadata": {
+        "id": "wp-qmCZBJCBK"
+      },
+      "execution_count": null,
+      "outputs": []
+    }
+  ],
+  "metadata": {
+    "colab": {
+      "provenance": [],
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "display_name": "Python 3",
+      "name": "python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 0
+}
