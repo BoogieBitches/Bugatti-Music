@@ -28,7 +28,7 @@ export default async function AdminPage({ params }: PageProps<"/[lang]/admin">) 
   const { data: pending } = await supabase
     .from("tracks")
     .select(
-      "*, genre:genres(id, slug, name_en, name_ru), uploader:profiles(id, full_name, avatar_url)",
+      "*, genre:genres(id, slug, name_en, name_ru), uploader:profiles!tracks_uploader_id_fkey(id, full_name, avatar_url)",
     )
     .eq("status", "pending")
     .order("created_at", { ascending: false });
@@ -36,7 +36,7 @@ export default async function AdminPage({ params }: PageProps<"/[lang]/admin">) 
   const { data: recentlyApproved } = await supabase
     .from("tracks")
     .select(
-      "*, genre:genres(id, slug, name_en, name_ru), uploader:profiles(id, full_name, avatar_url)",
+      "*, genre:genres(id, slug, name_en, name_ru), uploader:profiles!tracks_uploader_id_fkey(id, full_name, avatar_url)",
     )
     .eq("status", "approved")
     .order("approved_at", { ascending: false })

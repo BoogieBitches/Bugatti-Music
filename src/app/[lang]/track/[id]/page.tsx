@@ -19,7 +19,7 @@ export default async function TrackPage({ params }: PageProps<"/[lang]/track/[id
   const { data } = await supabase
     .from("tracks")
     .select(
-      "*, genre:genres(id, slug, name_en, name_ru), uploader:profiles(id, full_name, avatar_url)",
+      "*, genre:genres(id, slug, name_en, name_ru), uploader:profiles!tracks_uploader_id_fkey(id, full_name, avatar_url)",
     )
     .eq("id", id)
     .maybeSingle();

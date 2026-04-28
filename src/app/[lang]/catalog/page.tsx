@@ -36,7 +36,7 @@ export default async function CatalogPage({
       let query = supabase
         .from("tracks")
         .select(
-          "*, genre:genres(id, slug, name_en, name_ru), uploader:profiles(id, full_name, avatar_url)",
+          "*, genre:genres(id, slug, name_en, name_ru), uploader:profiles!tracks_uploader_id_fkey(id, full_name, avatar_url)",
         )
         .eq("status", "approved")
         .limit(60);
