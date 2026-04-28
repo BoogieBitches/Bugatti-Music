@@ -431,6 +431,97 @@ a {
     8px 8px 12px rgba(0, 0, 0, 0.5);
 }
 
+/* ---------- Burning / "on fire" text ---------- */
+
+@keyframes bs-fire-flicker {
+  0%, 100% {
+    background-position: 50% 0%;
+    filter: brightness(1) saturate(1.05);
+  }
+  25% {
+    background-position: 50% 12%;
+    filter: brightness(1.12) saturate(1.15);
+  }
+  50% {
+    background-position: 50% -6%;
+    filter: brightness(0.95) saturate(0.95);
+  }
+  75% {
+    background-position: 50% 18%;
+    filter: brightness(1.18) saturate(1.2);
+  }
+}
+
+@keyframes bs-fire-glow {
+  0%, 100% {
+    text-shadow:
+      0 -1px 4px rgba(255, 230, 120, 0.85),
+      0 -8px 18px rgba(255, 140, 30, 0.7),
+      0 -16px 32px rgba(255, 70, 0, 0.55),
+      0 -28px 48px rgba(180, 30, 0, 0.35);
+  }
+  50% {
+    text-shadow:
+      0 -1px 6px rgba(255, 245, 160, 1),
+      0 -10px 22px rgba(255, 160, 40, 0.85),
+      0 -22px 40px rgba(255, 90, 0, 0.7),
+      0 -36px 60px rgba(200, 40, 0, 0.45);
+  }
+}
+
+@keyframes bs-fire-shake {
+  0%, 100% { transform: translateY(0) }
+  25% { transform: translateY(-0.5px) }
+  75% { transform: translateY(0.4px) }
+}
+
+/* Fire-painted text. Apply on a span; text is clipped to a vertical
+   yellow→orange→red→dark gradient that subtly shifts to feel like flames
+   licking up. Pair with a wrapping element if you also want a glow. */
+.bs-fire {
+  background: linear-gradient(
+    to top,
+    #5a0a00 0%,
+    #b32a00 14%,
+    #ff5a00 32%,
+    #ff9a1f 52%,
+    #ffd166 72%,
+    #fff4c2 90%,
+    #ffffff 100%
+  );
+  background-size: 100% 220%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation:
+    bs-fire-flicker 2.4s ease-in-out infinite,
+    bs-fire-shake 0.18s steps(2) infinite;
+  font-family: var(--font-billboard, "Bebas Neue"), Impact, sans-serif;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  /* glow lives on a sibling pseudo so it doesn't clip with bg-clip:text */
+  position: relative;
+}
+
+/* Glow halo for fire text. Apply on the *parent* element of .bs-fire. */
+.bs-fire-glow {
+  position: relative;
+  display: inline-block;
+}
+.bs-fire-glow::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  color: transparent;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  pointer-events: none;
+  animation: bs-fire-glow 2.4s ease-in-out infinite;
+}
+
 .bs-3d-text-outline {
   -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.85);
   color: transparent;

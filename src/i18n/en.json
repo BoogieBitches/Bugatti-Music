@@ -161,7 +161,7 @@
     },
     "premium": {
       "name": "Premium",
-      "price": "$9.99",
+      "price": "$5",
       "period": "/ month",
       "features": ["Unlimited full-quality downloads", "Early access to new uploads", "No ads, no limits", "Cancel anytime"],
       "cta": "Start Premium"
