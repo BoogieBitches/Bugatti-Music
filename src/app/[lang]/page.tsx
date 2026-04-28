@@ -22,32 +22,39 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
   let genres: Genre[] = [];
   let topTracks: TrackWithGenre[] = [];
   let newTracks: TrackWithGenre[] = [];
+  let approvedCount = 0;
 
   if (hasSupabaseEnv()) {
     try {
       const supabase = await createSupabaseServerClient();
-      const [{ data: g }, { data: top }, { data: fresh }] = await Promise.all([
-        supabase.from("genres").select("*").order("position"),
-        supabase
-          .from("tracks")
-          .select(
-            "*, genre:genres(id, slug, name_en, name_ru), uploader:profiles!tracks_uploader_id_fkey(id, full_name, avatar_url)",
-          )
-          .eq("status", "approved")
-          .order("plays_count", { ascending: false })
-          .limit(8),
-        supabase
-          .from("tracks")
-          .select(
-            "*, genre:genres(id, slug, name_en, name_ru), uploader:profiles!tracks_uploader_id_fkey(id, full_name, avatar_url)",
-          )
-          .eq("status", "approved")
-          .order("created_at", { ascending: false })
-          .limit(6),
-      ]);
+      const [{ data: g }, { data: top }, { data: fresh }, { count }] =
+        await Promise.all([
+          supabase.from("genres").select("*").order("position"),
+          supabase
+            .from("tracks")
+            .select(
+              "*, genre:genres(id, slug, name_en, name_ru), uploader:profiles!tracks_uploader_id_fkey(id, full_name, avatar_url)",
+            )
+            .eq("status", "approved")
+            .order("plays_count", { ascending: false })
+            .limit(8),
+          supabase
+            .from("tracks")
+            .select(
+              "*, genre:genres(id, slug, name_en, name_ru), uploader:profiles!tracks_uploader_id_fkey(id, full_name, avatar_url)",
+            )
+            .eq("status", "approved")
+            .order("created_at", { ascending: false })
+            .limit(6),
+          supabase
+            .from("tracks")
+            .select("id", { count: "exact", head: true })
+            .eq("status", "approved"),
+        ]);
       genres = (g ?? []) as Genre[];
       topTracks = (top ?? []) as TrackWithGenre[];
       newTracks = (fresh ?? []) as TrackWithGenre[];
+      approvedCount = count ?? 0;
     } catch {
       // ignore — render anonymous home
     }
@@ -103,15 +110,15 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
               </div>
               <div className="mt-10 flex items-center gap-6 text-sm text-[var(--muted)]">
                 <div>
-                  <div className="font-display text-2xl text-white">
-                    {topTracks.length > 0 ? "1000+" : "1.0"}
+                  <div className="font-display text-2xl text-white tabular-nums">
+                    {approvedCount > 0 ? approvedCount.toLocaleString() : "—"}
                   </div>
                   <div>{lang === "ru" ? "треков в каталоге" : "tracks in pool"}</div>
                 </div>
                 <div className="w-px h-10 bg-[var(--border)]" />
                 <div>
-                  <div className="font-display text-2xl text-white">
-                    {genres.length || 12}
+                  <div className="font-display text-2xl text-white tabular-nums">
+                    {genres.length > 0 ? genres.length : "—"}
                   </div>
                   <div>{lang === "ru" ? "жанров" : "genres"}</div>
                 </div>
