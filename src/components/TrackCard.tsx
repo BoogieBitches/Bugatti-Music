@@ -58,7 +58,12 @@ export function TrackCard({ track, previewUrl, imageUrl, videoUrl }: Props) {
       ref={cardRef}
       onMouseMove={onMove}
       onMouseLeave={onLeave}
-      style={{ rotateX, rotateY, transformStyle: "preserve-3d", perspective: 1000 }}
+      style={{
+        rotateX,
+        rotateY,
+        transformPerspective: 1000,
+        transformStyle: "preserve-3d",
+      }}
       className="bs-card bs-card-glow p-4 flex flex-col gap-3 relative will-change-transform"
     >
       <Link href={`/${locale}/track/${track.id}`} className="block relative overflow-hidden rounded-xl">

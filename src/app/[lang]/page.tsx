@@ -217,7 +217,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
               <div className="bs-glass p-3 md:p-4 h-full">
                 <TopChartList
                   tracks={topTracks.slice(0, 8)}
-                  resolveCover={publicCover}
+                  supabaseUrl={baseUrl}
                 />
               </div>
             </RevealOnScroll>

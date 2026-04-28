@@ -8,16 +8,20 @@ import type { TrackWithGenre } from "@/types/db";
 
 interface Props {
   tracks: TrackWithGenre[];
-  resolveCover: (p: string | null) => string | null;
+  /** Base URL of the Supabase project, e.g. "https://xyz.supabase.co". */
+  supabaseUrl: string;
 }
 
-export function TopChartList({ tracks, resolveCover }: Props) {
+export function TopChartList({ tracks, supabaseUrl }: Props) {
   const { locale, dict } = useI18n();
 
   return (
     <ol className="flex flex-col">
       {tracks.map((t, i) => {
-        const cover = resolveCover(t.cover_image_path);
+        const cover =
+          t.cover_image_path && supabaseUrl
+            ? `${supabaseUrl}/storage/v1/object/public/covers/${t.cover_image_path}`
+            : null;
         const genre = t.genre ? (locale === "ru" ? t.genre.name_ru : t.genre.name_en) : null;
         return (
           <motion.li
