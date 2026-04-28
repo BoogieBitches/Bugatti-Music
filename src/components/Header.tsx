@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { getDictionary } from "@/i18n/dictionaries";
 import type { Locale } from "@/i18n/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -33,31 +34,42 @@ export async function Header({ locale }: { locale: Locale }) {
 
   const lp = `/${locale}`;
   return (
-    <header className="sticky top-0 z-30 backdrop-blur-md bg-black/40 border-b border-[var(--border)]">
-      <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-4">
-        <Link href={lp} className="flex items-center gap-2">
-          <span className="inline-block w-7 h-7 rounded-md bg-gradient-to-br from-[var(--accent)] to-[var(--accent-2)]" />
-          <span className="font-bold tracking-tight">{dict.brand.name}</span>
+    <header className="sticky top-0 z-30 backdrop-blur-xl bg-[rgba(5,6,8,0.55)] border-b border-[var(--border)]">
+      <div className="max-w-7xl mx-auto px-4 h-16 flex items-center gap-4">
+        <Link href={lp} className="flex items-center gap-2.5 group">
+          <span className="relative inline-block w-9 h-9 rounded-xl overflow-hidden ring-1 ring-white/10 transition-transform group-hover:scale-105">
+            <Image
+              src="/bugatti-logo.png"
+              alt="Bugatti Sound"
+              fill
+              sizes="36px"
+              className="object-contain"
+              priority
+            />
+          </span>
+          <span className="font-display font-bold tracking-tight text-[15px]">
+            BUGATTI <span className="text-[var(--accent-2)]">SOUND</span>
+          </span>
         </Link>
-        <nav className="hidden md:flex items-center gap-1 ml-4 text-sm text-[var(--muted)]">
-          <Link href={`${lp}/catalog`} className="px-3 py-1.5 hover:text-white">
+        <nav className="hidden md:flex items-center gap-0.5 ml-4 text-sm text-[var(--muted)]">
+          <Link href={`${lp}/catalog`} className="px-3 py-1.5 hover:text-white transition-colors">
             {dict.nav.catalog}
           </Link>
-          <Link href={`${lp}/pricing`} className="px-3 py-1.5 hover:text-white">
+          <Link href={`${lp}/pricing`} className="px-3 py-1.5 hover:text-white transition-colors">
             {dict.nav.pricing}
           </Link>
           {userEmail && (
-            <Link href={`${lp}/upload`} className="px-3 py-1.5 hover:text-white">
+            <Link href={`${lp}/upload`} className="px-3 py-1.5 hover:text-white transition-colors">
               {dict.nav.upload}
             </Link>
           )}
           {userEmail && (
-            <Link href={`${lp}/dashboard`} className="px-3 py-1.5 hover:text-white">
+            <Link href={`${lp}/dashboard`} className="px-3 py-1.5 hover:text-white transition-colors">
               {dict.nav.dashboard}
             </Link>
           )}
           {role === "admin" && (
-            <Link href={`${lp}/admin`} className="px-3 py-1.5 hover:text-white">
+            <Link href={`${lp}/admin`} className="px-3 py-1.5 hover:text-white transition-colors">
               {dict.nav.admin}
             </Link>
           )}
