@@ -64,7 +64,7 @@ export function GenreTiles({ genres }: { genres: Genre[] }) {
             color={color}
             label={name}
             caption={`PAD ${String(i + 1).padStart(2, "0")}`}
-            ariaLabel={`Browse ${name}`}
+            ariaLabel={locale === "ru" ? `Открыть ${name}` : `Browse ${name}`}
             onClick={() =>
               router.push(`/${locale}/catalog?genre=${g.slug}`)
             }
