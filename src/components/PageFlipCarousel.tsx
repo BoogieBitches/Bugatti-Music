@@ -55,7 +55,11 @@ export function PageFlipCarousel({
   const cover = cur.cover_image_path && supabaseUrl
     ? `${supabaseUrl}/storage/v1/object/public/covers/${cur.cover_image_path}`
     : null;
-  const genreName = cur.genre?.name_en ?? "";
+  const genreName = cur.genre
+    ? locale === "ru"
+      ? cur.genre.name_ru
+      : cur.genre.name_en
+    : "";
 
   return (
     <div className="relative w-full">
