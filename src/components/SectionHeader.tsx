@@ -54,7 +54,7 @@ export function SectionHeader({
           </div>
         )}
         <h2 className="font-display text-4xl md:text-6xl lg:text-7xl font-bold tracking-tighter leading-[0.95]">
-          <TextReveal text={title} stagger={0.025} />
+          <TextReveal text={title} stagger={0.025} trigger="mount" />
         </h2>
         {description && (
           <p className="mt-4 text-[var(--muted)] text-base md:text-lg max-w-2xl">

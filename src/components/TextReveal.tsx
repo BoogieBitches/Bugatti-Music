@@ -14,6 +14,12 @@ interface Props {
   mode?: "char" | "word";
   /** Replace explicit spaces with non-breaking ones. */
   preserveSpaces?: boolean;
+  /**
+   * "mount" animates immediately on render (best for above-the-fold hero
+   * titles). "scroll" waits for the element to enter the viewport (best for
+   * below-the-fold section titles).
+   */
+  trigger?: "mount" | "scroll";
 }
 
 /**
@@ -28,6 +34,7 @@ export function TextReveal({
   className = "",
   mode = "char",
   preserveSpaces = true,
+  trigger = "mount",
 }: Props) {
   const reduce = useReducedMotion();
   const segments = mode === "char" ? Array.from(text) : text.split(/(\s+)/);
@@ -35,6 +42,9 @@ export function TextReveal({
   if (reduce) {
     return <span className={className}>{text}</span>;
   }
+
+  const initial = { y: "110%", opacity: 0 };
+  const visible = { y: "0%", opacity: 1 };
 
   return (
     <span
@@ -50,6 +60,14 @@ export function TextReveal({
             </span>
           );
         }
+        const motionProps =
+          trigger === "mount"
+            ? { initial, animate: visible }
+            : {
+                initial,
+                whileInView: visible,
+                viewport: { once: true, margin: "-10%" },
+              };
         return (
           <span
             key={i}
@@ -57,15 +75,13 @@ export function TextReveal({
             className="inline-block overflow-hidden align-baseline leading-[1.05]"
           >
             <motion.span
-              initial={{ y: "115%", opacity: 0 }}
-              whileInView={{ y: "0%", opacity: 1 }}
-              viewport={{ once: true, margin: "-10%" }}
+              {...motionProps}
               transition={{
                 duration: 0.7,
                 delay: delay + i * stagger,
                 ease: [0.22, 1, 0.36, 1],
               }}
-              className="inline-block will-change-transform"
+              className="inline-block"
             >
               {seg}
             </motion.span>

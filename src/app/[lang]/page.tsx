@@ -6,20 +6,14 @@ import { notFound } from "next/navigation";
 import { hasSupabaseEnv } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Genre, TrackWithGenre } from "@/types/db";
-import { PageFlipCarousel } from "@/components/PageFlipCarousel";
-import { GraffitiTitle } from "@/components/GraffitiTitle";
-import { SectionHeader } from "@/components/SectionHeader";
+import { Coverflow } from "@/components/Coverflow";
 import { TextReveal } from "@/components/TextReveal";
-import { TrackCard } from "@/components/TrackCard";
-import { TopChartList } from "@/components/TopChartList";
-import { GenreTiles } from "@/components/GenreTiles";
 import { Marquee } from "@/components/Marquee";
-import { RevealOnScroll } from "@/components/RevealOnScroll";
 
 export default async function HomePage({ params }: PageProps<"/[lang]">) {
   const { lang } = await params;
   if (!isLocale(lang)) notFound();
-  const dict = await getDictionary(lang);
+  await getDictionary(lang);
   const lp = `/${lang}`;
 
   let genres: Genre[] = [];
@@ -48,7 +42,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
             )
             .eq("status", "approved")
             .order("created_at", { ascending: false })
-            .limit(6),
+            .limit(8),
           supabase
             .from("tracks")
             .select("id", { count: "exact", head: true })
@@ -66,11 +60,14 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
   const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   const publicCover = (p: string | null) =>
     p && baseUrl ? `${baseUrl}/storage/v1/object/public/covers/${p}` : null;
-  const publicPreview = (p: string | null) =>
-    p && baseUrl ? `${baseUrl}/storage/v1/object/public/audio-previews/${p}` : null;
 
-  const featured = topTracks[0];
-  const featuredCover = featured ? publicCover(featured.cover_image_path) : null;
+  // Tracks for the 3D coverflow — prefer fresh, fall back to top.
+  const coverflowTracks =
+    newTracks.length >= 3
+      ? newTracks
+      : topTracks.length >= 3
+        ? topTracks
+        : [...newTracks, ...topTracks];
 
   const marqueeItems = [
     "HIP-HOP",
@@ -87,50 +84,193 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
     "LATIN",
   ];
 
+  const benefits =
+    lang === "ru"
+      ? [
+          {
+            kicker: "Каталог",
+            title: "Тысячи треков от лучших продюсеров",
+            body: "Hip-Hop, House, EDM, Reggaeton, Phonk и не только — каждый трек проходит модерацию.",
+          },
+          {
+            kicker: "Скачивание",
+            title: "Полное качество в один клик",
+            body: "Без водяных знаков, без рекламы, без лимитов. Скачивай и используй где угодно.",
+          },
+          {
+            kicker: "Превью",
+            title: "30-секундные сэмплы для всех",
+            body: "Слушай на любом устройстве — регистрация не требуется.",
+          },
+          {
+            kicker: "Дропы",
+            title: "Свежие релизы каждую неделю",
+            body: "Новые треки добавляются ежедневно. Будь первым, кто их сыграет.",
+          },
+          {
+            kicker: "От DJ для DJ",
+            title: "Сделано теми, кто играет сам",
+            body: "Каждый бит, каждая обложка, каждая обложка под живой сет.",
+          },
+        ]
+      : [
+          {
+            kicker: "Catalog",
+            title: "Thousands of tracks from top producers",
+            body: "Hip-Hop, House, EDM, Reggaeton, Phonk and beyond — every release moderated.",
+          },
+          {
+            kicker: "Downloads",
+            title: "Full-quality, one click away",
+            body: "No watermarks, no ads, no limits. Download and play anywhere.",
+          },
+          {
+            kicker: "Previews",
+            title: "30-second samples on every track",
+            body: "Listen on any device — no signup required.",
+          },
+          {
+            kicker: "Drops",
+            title: "Fresh releases every week",
+            body: "New tracks added daily. Be first to play them out.",
+          },
+          {
+            kicker: "By DJs for DJs",
+            title: "Built by people who play out",
+            body: "Every beat, every cover, every detail tuned for the live set.",
+          },
+        ];
+
+  const plans =
+    lang === "ru"
+      ? [
+          {
+            name: "Бесплатный",
+            price: "0₽",
+            period: "/ навсегда",
+            features: [
+              "Полный каталог",
+              "30-секундные превью",
+              "Загрузка своих треков",
+              "Поддержка ru/en",
+            ],
+            cta: "Зарегистрироваться",
+            href: `${lp}/signup`,
+            featured: false,
+          },
+          {
+            name: "Premium",
+            price: "$5",
+            period: "/ месяц",
+            features: [
+              "Безлимитные скачивания",
+              "Ранний доступ к новинкам",
+              "Полное качество, без рекламы",
+              "Отмена в любой момент",
+            ],
+            cta: "Оформить подписку",
+            href: `${lp}/pricing`,
+            featured: true,
+          },
+          {
+            name: "All-Access",
+            price: "Скоро",
+            period: "",
+            features: [
+              "Всё из Premium",
+              "Эксклюзивные дропы",
+              "Скидки на оборудование",
+              "Прямая связь с продюсерами",
+            ],
+            cta: "Уведомить",
+            href: `${lp}/pricing`,
+            featured: false,
+          },
+        ]
+      : [
+          {
+            name: "Free",
+            price: "$0",
+            period: "/ forever",
+            features: [
+              "Browse full catalog",
+              "30-sec previews",
+              "Upload your own tracks",
+              "EN / RU support",
+            ],
+            cta: "Sign up free",
+            href: `${lp}/signup`,
+            featured: false,
+          },
+          {
+            name: "Premium",
+            price: "$5",
+            period: "/ month",
+            features: [
+              "Unlimited full-quality downloads",
+              "Early access to new uploads",
+              "No ads, no limits",
+              "Cancel anytime",
+            ],
+            cta: "Get Premium",
+            href: `${lp}/pricing`,
+            featured: true,
+          },
+          {
+            name: "All-Access",
+            price: "Soon",
+            period: "",
+            features: [
+              "Everything in Premium",
+              "Exclusive drops",
+              "Hardware discounts",
+              "Direct producer DMs",
+            ],
+            cta: "Notify me",
+            href: `${lp}/pricing`,
+            featured: false,
+          },
+        ];
+
   return (
     <div>
-      {/* HERO — BPM-Supreme-style massive lowercase title */}
+      {/* HERO — BPM-Supreme-style massive lowercase title only */}
       <section className="relative overflow-hidden">
-        {/* Faint graffiti backdrop */}
-        <div className="absolute inset-0 -z-[1] flex items-end justify-end opacity-25 pointer-events-none">
-          <GraffitiTitle
-            lines={["BUGATTI"]}
-            className="relative w-[120%] -mr-[10%] mb-[-8%]"
-          />
-        </div>
         <div
           aria-hidden
           className="absolute inset-0 -z-[1]"
           style={{
             background:
-              "radial-gradient(60% 60% at 50% 50%, rgba(5,6,8,0.55), transparent 70%)",
+              "radial-gradient(60% 60% at 50% 30%, rgba(91,140,255,0.18), transparent 70%), radial-gradient(50% 50% at 80% 80%, rgba(255,122,0,0.14), transparent 70%)",
           }}
         />
 
-        <div className="relative max-w-[1400px] mx-auto px-5 md:px-10 pt-10 md:pt-16 pb-10 md:pb-16">
+        <div className="relative max-w-[1400px] mx-auto px-5 md:px-10 pt-12 md:pt-20 pb-10 md:pb-16">
           {/* Massive display title — fills width like BPM */}
           <h1
-            className="font-display font-bold leading-[0.86] tracking-[-0.04em] lowercase"
-            style={{ fontSize: "clamp(72px, 14vw, 220px)" }}
+            className="font-display font-bold leading-[0.86] tracking-[-0.05em] lowercase text-[#f1ece4] whitespace-nowrap"
+            style={{
+              fontSize: "clamp(56px, 11.5vw, 168px)",
+              textShadow:
+                "0 4px 80px rgba(91, 140, 255, 0.25), 0 2px 30px rgba(255, 122, 0, 0.18)",
+            }}
           >
-            <span className="bs-text-gradient">
-              <TextReveal text={lang === "ru" ? "bugatti sound" : "bugatti sound"} stagger={0.035} />
-            </span>
+            <TextReveal text="bugatti sound" stagger={0.035} trigger="mount" />
           </h1>
 
           {/* 3-column caption row + CTA on the right */}
-          <div className="mt-8 md:mt-10 grid md:grid-cols-12 gap-6 md:gap-8">
+          <div className="mt-8 md:mt-12 grid md:grid-cols-12 gap-6 md:gap-8 items-end">
             <div className="md:col-span-3">
               <p className="font-display text-[15px] md:text-base font-semibold text-white leading-snug">
                 {lang === "ru"
-                  ? "Подними свой DJ-сет на новый уровень"
+                  ? "Подними свой DJ-сет на новый уровень."
                   : "Level up your DJ set with Bugatti Sound."}
               </p>
             </div>
             <div className="md:col-span-3">
               <p className="font-display text-[15px] md:text-base font-semibold text-white leading-snug">
                 {lang === "ru"
-                  ? `${approvedCount > 0 ? approvedCount.toLocaleString() : "1000+"} треков от лучших продюсеров`
+                  ? `${approvedCount > 0 ? approvedCount.toLocaleString() : "1000+"} треков от лучших продюсеров.`
                   : `${approvedCount > 0 ? approvedCount.toLocaleString() : "1000+"} tracks from top producers worldwide.`}
               </p>
             </div>
@@ -156,263 +296,353 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
               </Link>
             </div>
           </div>
-
-          {/* Page-flip carousel + CTAs / stats */}
-          <div className="mt-14 md:mt-20 grid md:grid-cols-12 gap-10 md:gap-14 items-center">
-            <div className="md:col-span-6 order-2 md:order-1">
-              <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--accent-3)]">
-                {lang === "ru" ? "Новые релизы" : "New Releases"}
-              </div>
-              <h2 className="mt-3 font-display text-3xl md:text-5xl font-bold tracking-tighter leading-[0.95]">
-                <TextReveal
-                  text={
-                    lang === "ru"
-                      ? "Листай свежую музыку как книгу"
-                      : "Flip through fresh music like a book"
-                  }
-                  stagger={0.018}
-                />
-              </h2>
-              <p className="mt-5 text-[var(--muted)] text-base md:text-lg max-w-md">
-                {lang === "ru"
-                  ? "Каждая обложка — отдельный релиз. Нажми, чтобы послушать или скачать."
-                  : "Each cover is a release. Tap to preview or download in one click."}
-              </p>
-              <div className="mt-7 flex flex-wrap gap-3">
-                <Link href={`${lp}/catalog`} className="bs-button bs-button-primary text-base">
-                  {dict.home.hero.ctaBrowse}
-                </Link>
-                <Link href={`${lp}/pricing`} className="bs-button bs-button-ghost text-base">
-                  {dict.nav.pricing}
-                </Link>
-              </div>
-              <div className="mt-10 grid grid-cols-3 gap-4 max-w-md">
-                <div>
-                  <div className="font-display text-3xl text-white tabular-nums leading-none">
-                    {approvedCount > 0 ? approvedCount.toLocaleString() : "—"}
-                  </div>
-                  <div className="mt-2 text-[11px] uppercase tracking-[0.18em] text-[var(--muted)]">
-                    {lang === "ru" ? "треков" : "tracks"}
-                  </div>
-                </div>
-                <div>
-                  <div className="font-display text-3xl text-white tabular-nums leading-none">
-                    {genres.length > 0 ? genres.length : "—"}
-                  </div>
-                  <div className="mt-2 text-[11px] uppercase tracking-[0.18em] text-[var(--muted)]">
-                    {lang === "ru" ? "жанров" : "genres"}
-                  </div>
-                </div>
-                <div>
-                  <div className="font-display text-3xl text-white leading-none">24/7</div>
-                  <div className="mt-2 text-[11px] uppercase tracking-[0.18em] text-[var(--muted)]">
-                    {lang === "ru" ? "дропы" : "drops"}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="md:col-span-6 order-1 md:order-2">
-              {newTracks.length > 0 ? (
-                <PageFlipCarousel
-                  tracks={newTracks}
-                  supabaseUrl={baseUrl}
-                  locale={lang}
-                />
-              ) : topTracks.length > 0 ? (
-                <PageFlipCarousel
-                  tracks={topTracks.slice(0, 6)}
-                  supabaseUrl={baseUrl}
-                  locale={lang}
-                />
-              ) : (
-                <div className="aspect-[3/4] max-w-[520px] mx-auto rounded-3xl border border-[var(--border)] bg-gradient-to-br from-[var(--accent)]/20 via-[var(--accent-2)]/10 to-black flex items-center justify-center">
-                  <span className="text-[var(--muted)]">
-                    {lang === "ru" ? "Скоро появятся релизы" : "Releases coming soon"}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       </section>
 
-      {/* MARQUEE */}
+      {/* MARQUEE — full-bleed strip between hero and trending */}
       <section className="border-y border-[var(--border)] bg-black/30 backdrop-blur-sm">
         <Marquee items={marqueeItems} speed={45} />
       </section>
 
-      {/* FEATURED + TOP CHART */}
-      {topTracks.length > 0 && (
-        <section className="max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28">
-          <SectionHeader
-            index="01"
-            eyebrow={lang === "ru" ? "Чарт недели" : "Weekly chart"}
-            title={lang === "ru" ? "Самые горячие треки" : "Top tracks right now"}
-            description={
-              lang === "ru"
-                ? "Рейтинг по прослушиваниям и скачиваниям обновляется в реальном времени."
-                : "Ranked by plays and downloads. Updated continuously."
-            }
-            action={
-              <Link
-                href={`${lp}/catalog?sort=popular`}
-                className="bs-button bs-button-ghost"
-              >
-                {lang === "ru" ? "Весь чарт" : "View all"} →
-              </Link>
-            }
-          />
-
-          <div className="grid lg:grid-cols-12 gap-6">
-            {/* Featured */}
-            {featured && (
-              <RevealOnScroll className="lg:col-span-5" delay={0.1}>
-                <Link
-                  href={`${lp}/track/${featured.id}`}
-                  className="bs-card bs-card-glow group relative block aspect-[4/5] lg:aspect-auto lg:h-full overflow-hidden p-0"
-                >
-                  {featuredCover ? (
-                    <Image
-                      src={featuredCover}
-                      alt={featured.title}
-                      fill
-                      sizes="(min-width: 1024px) 40vw, 100vw"
-                      className="object-cover transition-transform duration-700 group-hover:scale-105"
-                    />
-                  ) : (
-                    <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent)]/40 via-[var(--accent-2)]/30 to-black" />
-                  )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent" />
-                  <div className="absolute top-4 left-4 flex gap-1.5">
-                    <span className="bs-badge bs-badge-premium">#1</span>
-                    {featured.is_premium_only && (
-                      <span className="bs-badge bs-badge-premium">
-                        {dict.common.premiumBadge}
-                      </span>
-                    )}
-                  </div>
-                  <div className="absolute bottom-0 left-0 right-0 p-6 md:p-8">
-                    <div className="text-xs uppercase tracking-widest text-[var(--accent-3)] mb-2">
-                      {lang === "ru" ? "Релиз дня" : "Today's pick"}
-                    </div>
-                    <h3 className="font-display text-3xl md:text-4xl font-bold tracking-tight">
-                      {featured.title}
-                    </h3>
-                    <p className="text-[var(--muted)] mt-1 text-lg">{featured.artist}</p>
-                    <div className="mt-4 flex flex-wrap gap-1.5">
-                      {featured.genre && (
-                        <span className="bs-badge">
-                          {lang === "ru" ? featured.genre.name_ru : featured.genre.name_en}
-                        </span>
-                      )}
-                      {featured.bpm && (
-                        <span className="bs-badge">
-                          {featured.bpm} {dict.track.bpm}
-                        </span>
-                      )}
-                      {featured.music_key && (
-                        <span className="bs-badge">{featured.music_key}</span>
-                      )}
-                    </div>
-                  </div>
-                </Link>
-              </RevealOnScroll>
-            )}
-
-            {/* Chart list */}
-            <RevealOnScroll className="lg:col-span-7" delay={0.15}>
-              <div className="bs-glass p-3 md:p-4 h-full">
-                <TopChartList
-                  tracks={topTracks.slice(0, 8)}
-                  supabaseUrl={baseUrl}
-                />
+      {/* SECTION 01 — TRENDING / 3D COVERFLOW */}
+      {coverflowTracks.length >= 1 && (
+        <section className="relative max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28">
+          <header className="grid md:grid-cols-12 gap-6 md:gap-10 items-end mb-12 md:mb-16">
+            <div className="md:col-span-1 font-display text-5xl md:text-6xl font-bold tabular-nums tracking-tighter text-white/90">
+              01
+            </div>
+            <div className="md:col-span-7">
+              <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-3">
+                {genres.length}+ {lang === "ru" ? "жанров" : "Genres"}
               </div>
-            </RevealOnScroll>
-          </div>
-        </section>
-      )}
-
-      {/* GENRES */}
-      {genres.length > 0 && (
-        <section className="max-w-[1400px] mx-auto px-5 md:px-10 py-16 md:py-24">
-          <SectionHeader
-            index="02"
-            eyebrow={lang === "ru" ? "20+ жанров" : "20+ genres"}
-            title={lang === "ru" ? "Найди свой звук" : "Find your sound"}
-            description={
-              lang === "ru"
-                ? "От hip-hop и amapiano до tech-house и phonk — выбирай любой вайб."
-                : "From hip-hop and amapiano to tech-house and phonk — pick a vibe."
-            }
-          />
-          <RevealOnScroll>
-            <GenreTiles genres={genres} />
-          </RevealOnScroll>
-        </section>
-      )}
-
-      {/* NEW RELEASES */}
-      {newTracks.length > 0 && (
-        <section className="max-w-[1400px] mx-auto px-5 md:px-10 py-16 md:py-24">
-          <SectionHeader
-            index="03"
-            eyebrow={lang === "ru" ? "Новинки" : "New releases"}
-            title={lang === "ru" ? "Свежие дропы" : "Fresh drops"}
-            description={
-              lang === "ru"
-                ? "Самые новые релизы в каталоге."
-                : "The latest releases hitting the pool."
-            }
-            action={
-              <Link href={`${lp}/catalog`} className="bs-button bs-button-ghost">
-                {lang === "ru" ? "Открыть каталог" : "Open catalog"} →
+              <h2 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold tracking-tighter leading-[0.95] text-white">
+                <TextReveal
+                  text={lang === "ru" ? "Trending" : "Trending"}
+                  stagger={0.04}
+                  trigger="mount"
+                />
+              </h2>
+            </div>
+            <div className="md:col-span-4 flex md:justify-end">
+              <Link
+                href={`${lp}/catalog`}
+                className="group inline-flex items-center gap-2 font-display text-sm font-semibold tracking-[0.18em] uppercase"
+              >
+                <span>{lang === "ru" ? "Все жанры" : "Explore Genres"}</span>
+                <span
+                  aria-hidden
+                  className="inline-block transition-transform group-hover:translate-x-1"
+                >
+                  →
+                </span>
               </Link>
-            }
+            </div>
+          </header>
+
+          <Coverflow
+            tracks={coverflowTracks}
+            supabaseUrl={baseUrl}
+            locale={lang}
           />
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {newTracks.map((t) => (
-              <TrackCard
-                key={t.id}
-                track={t}
-                previewUrl={publicPreview(t.preview_path)}
-                imageUrl={publicCover(t.cover_image_path)}
-                videoUrl={publicCover(t.cover_video_path)}
+        </section>
+      )}
+
+      {/* SECTION 02 — SUBSCRIBE */}
+      <section className="relative max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28 border-t border-[var(--border)]">
+        <header className="grid md:grid-cols-12 gap-6 md:gap-10 items-end">
+          <div className="md:col-span-1 font-display text-5xl md:text-6xl font-bold tabular-nums tracking-tighter text-white/90">
+            02
+          </div>
+          <div className="md:col-span-7">
+            <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-3">
+              {lang === "ru" ? "Подписка" : "Subscribe"}
+            </div>
+            <h2 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold tracking-tighter leading-[0.95] text-white">
+              <TextReveal
+                text={lang === "ru" ? "Subscribe" : "Subscribe"}
+                stagger={0.04}
+                trigger="mount"
               />
+            </h2>
+            <p className="mt-6 text-[var(--muted)] text-base md:text-xl max-w-2xl">
+              {lang === "ru"
+                ? "Скачивай треки. Используй где угодно. Без бредятины."
+                : "Download tracks. Use them anywhere. No bullshit."}
+            </p>
+          </div>
+          <div className="md:col-span-4 flex md:justify-end">
+            <Link
+              href={`${lp}/pricing`}
+              className="bs-button bs-button-primary text-base"
+            >
+              {lang === "ru" ? "Выбрать план" : "Choose plan"} →
+            </Link>
+          </div>
+        </header>
+      </section>
+
+      {/* SECTION 03 — PLANS */}
+      <section className="relative max-w-[1400px] mx-auto px-5 md:px-10 pb-20 md:pb-28">
+        <header className="grid md:grid-cols-12 gap-6 md:gap-10 items-end mb-12 md:mb-16">
+          <div className="md:col-span-1 font-display text-5xl md:text-6xl font-bold tabular-nums tracking-tighter text-white/90">
+            03
+          </div>
+          <div className="md:col-span-11">
+            <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-3">
+              {lang === "ru" ? "Тарифы" : "Plans"}
+            </div>
+            <h2 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold tracking-tighter leading-[0.95] text-white">
+              <TextReveal
+                text={lang === "ru" ? "Plans" : "Plans"}
+                stagger={0.04}
+                trigger="mount"
+              />
+            </h2>
+          </div>
+        </header>
+
+        <div className="grid md:grid-cols-3 gap-5 md:gap-6">
+          {plans.map((plan) => (
+            <div
+              key={plan.name}
+              className={`relative rounded-3xl p-7 md:p-8 border ${
+                plan.featured
+                  ? "border-[var(--accent)]/60 bg-gradient-to-br from-[var(--accent)]/15 via-black/60 to-[var(--accent-2)]/10"
+                  : "border-[var(--border)] bg-black/40"
+              } backdrop-blur-sm flex flex-col`}
+            >
+              {plan.featured && (
+                <div className="absolute top-5 right-5 text-[10px] tracking-[0.24em] uppercase text-[var(--accent-3)] font-display font-bold">
+                  {lang === "ru" ? "Популярный" : "Most popular"}
+                </div>
+              )}
+              <div className="font-display text-2xl font-bold text-white">
+                {plan.name}
+              </div>
+              <div className="mt-6 flex items-baseline gap-2">
+                <span className="font-display text-6xl font-bold tracking-tighter text-white tabular-nums">
+                  {plan.price}
+                </span>
+                <span className="text-[var(--muted)] text-sm">
+                  {plan.period}
+                </span>
+              </div>
+              <ul className="mt-8 space-y-3 text-[var(--foreground)] text-sm md:text-base flex-1">
+                {plan.features.map((f) => (
+                  <li key={f} className="flex items-start gap-3">
+                    <span
+                      aria-hidden
+                      className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--accent)] shrink-0"
+                    />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href={plan.href}
+                className={`mt-8 ${
+                  plan.featured ? "bs-button bs-button-primary" : "bs-button bs-button-ghost"
+                } text-base justify-center`}
+              >
+                {plan.cta} →
+              </Link>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* SECTION 04 — ACCESS TO / BENEFITS */}
+      <section className="relative max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28 border-t border-[var(--border)]">
+        <header className="grid md:grid-cols-12 gap-6 md:gap-10 items-end mb-12 md:mb-16">
+          <div className="md:col-span-1 font-display text-5xl md:text-6xl font-bold tabular-nums tracking-tighter text-white/90">
+            04
+          </div>
+          <div className="md:col-span-11">
+            <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-3">
+              {lang === "ru" ? "Что внутри" : "Access to"}
+            </div>
+            <h2 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold tracking-tighter leading-[0.95] text-white">
+              <TextReveal
+                text={lang === "ru" ? "Everything." : "Everything."}
+                stagger={0.04}
+                trigger="mount"
+              />
+            </h2>
+          </div>
+        </header>
+
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-12 md:gap-y-16">
+          {benefits.map((b, i) => (
+            <div key={b.title} className="relative">
+              <div className="font-display text-3xl font-bold tabular-nums tracking-tighter text-white/30 mb-3">
+                {String(i + 1).padStart(2, "0")}
+              </div>
+              <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-3">
+                {b.kicker}
+              </div>
+              <h3 className="font-display text-2xl md:text-3xl font-bold tracking-tight text-white leading-tight">
+                {b.title}
+              </h3>
+              <p className="mt-4 text-[var(--muted)] text-base">{b.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* SECTION 05 — GENRES */}
+      {genres.length > 0 && (
+        <section className="relative max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28 border-t border-[var(--border)]">
+          <header className="grid md:grid-cols-12 gap-6 md:gap-10 items-end mb-12 md:mb-16">
+            <div className="md:col-span-1 font-display text-5xl md:text-6xl font-bold tabular-nums tracking-tighter text-white/90">
+              05
+            </div>
+            <div className="md:col-span-7">
+              <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-3">
+                {genres.length}+ {lang === "ru" ? "стилей" : "Styles"}
+              </div>
+              <h2 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold tracking-tighter leading-[0.95] text-white">
+                <TextReveal
+                  text={lang === "ru" ? "Genres" : "Genres"}
+                  stagger={0.04}
+                  trigger="mount"
+                />
+              </h2>
+            </div>
+            <div className="md:col-span-4 flex md:justify-end">
+              <Link
+                href={`${lp}/catalog`}
+                className="group inline-flex items-center gap-2 font-display text-sm font-semibold tracking-[0.18em] uppercase"
+              >
+                <span>{lang === "ru" ? "Весь каталог" : "View all"}</span>
+                <span
+                  aria-hidden
+                  className="inline-block transition-transform group-hover:translate-x-1"
+                >
+                  →
+                </span>
+              </Link>
+            </div>
+          </header>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
+            {genres.slice(0, 20).map((g) => (
+              <Link
+                key={g.id}
+                href={`${lp}/catalog?genre=${g.slug}`}
+                className="group relative aspect-[5/4] rounded-2xl overflow-hidden border border-[var(--border)] bg-gradient-to-br from-white/5 to-transparent flex items-end p-4 hover:border-white/30 transition-colors"
+              >
+                <div
+                  aria-hidden
+                  className="absolute inset-0 opacity-40 group-hover:opacity-60 transition-opacity"
+                  style={{
+                    background: `radial-gradient(120% 80% at 50% 100%, ${
+                      [
+                        "#5b8cff",
+                        "#ff7a00",
+                        "#7b49ff",
+                        "#22c55e",
+                        "#ff3d6b",
+                        "#00d4ff",
+                        "#ffd000",
+                      ][g.position % 7]
+                    }, transparent 70%)`,
+                  }}
+                />
+                <span className="relative font-display text-lg md:text-xl font-bold tracking-tight text-white">
+                  {lang === "ru" ? g.name_ru : g.name_en}
+                </span>
+              </Link>
             ))}
           </div>
         </section>
       )}
 
-      {/* FEATURES */}
-      <section className="max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28">
-        <SectionHeader
-          index="04"
-          eyebrow={lang === "ru" ? "Возможности" : "Why Bugatti"}
-          title={dict.home.features.title}
-        />
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {dict.home.features.items.map((item, i) => (
-            <RevealOnScroll key={i} delay={i * 0.05}>
-              <div className="bs-card bs-card-glow p-6 h-full">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-2)] shadow-[0_8px_24px_-8px_rgba(91,140,255,0.6)]" />
-                <h3 className="mt-5 font-display font-semibold text-lg">{item.title}</h3>
-                <p className="mt-1.5 text-sm text-[var(--muted)] leading-relaxed">
-                  {item.body}
-                </p>
+      {/* SECTION 06 — NEW RELEASES GRID */}
+      {newTracks.length > 0 && (
+        <section className="relative max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28 border-t border-[var(--border)]">
+          <header className="grid md:grid-cols-12 gap-6 md:gap-10 items-end mb-12 md:mb-16">
+            <div className="md:col-span-1 font-display text-5xl md:text-6xl font-bold tabular-nums tracking-tighter text-white/90">
+              06
+            </div>
+            <div className="md:col-span-7">
+              <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-3">
+                {lang === "ru" ? "Свежие дропы" : "Fresh drops"}
               </div>
-            </RevealOnScroll>
-          ))}
-        </div>
-      </section>
+              <h2 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold tracking-tighter leading-[0.95] text-white">
+                <TextReveal
+                  text={lang === "ru" ? "New" : "New"}
+                  stagger={0.04}
+                  trigger="mount"
+                />
+              </h2>
+            </div>
+            <div className="md:col-span-4 flex md:justify-end">
+              <Link
+                href={`${lp}/catalog?sort=new`}
+                className="group inline-flex items-center gap-2 font-display text-sm font-semibold tracking-[0.18em] uppercase"
+              >
+                <span>{lang === "ru" ? "Все новинки" : "View all"}</span>
+                <span
+                  aria-hidden
+                  className="inline-block transition-transform group-hover:translate-x-1"
+                >
+                  →
+                </span>
+              </Link>
+            </div>
+          </header>
 
-      {/* CTA — BPM-Supreme-style "Your Next Set Starts Here." stagger */}
-      <section className="relative overflow-hidden">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 md:gap-5">
+            {newTracks.slice(0, 8).map((t) => {
+              const cover = publicCover(t.cover_image_path);
+              const genreName = t.genre
+                ? lang === "ru"
+                  ? t.genre.name_ru
+                  : t.genre.name_en
+                : "";
+              return (
+                <Link
+                  key={t.id}
+                  href={`${lp}/track/${t.id}`}
+                  className="group relative block"
+                >
+                  <div className="relative aspect-square rounded-2xl overflow-hidden ring-1 ring-white/10 bg-black/40">
+                    {cover ? (
+                      <Image
+                        src={cover}
+                        alt={t.title}
+                        fill
+                        sizes="(min-width: 768px) 25vw, 50vw"
+                        className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent)]/30 to-[var(--accent-2)]/20" />
+                    )}
+                  </div>
+                  <div className="mt-3">
+                    <div className="font-display text-base md:text-lg font-bold text-white truncate">
+                      {t.title}
+                    </div>
+                    <div className="text-sm text-[var(--muted)] truncate">
+                      {t.artist}
+                      {genreName ? ` · ${genreName}` : ""}
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* FINAL CTA — your next set starts here */}
+      <section className="relative overflow-hidden border-t border-[var(--border)]">
         <div
           aria-hidden
-          className="absolute inset-0 -z-10"
+          className="absolute inset-0 -z-[1]"
           style={{
             background:
-              "radial-gradient(60% 60% at 30% 30%, rgba(91,140,255,0.25), transparent 60%), radial-gradient(60% 60% at 80% 80%, rgba(255,122,0,0.22), transparent 60%)",
+              "radial-gradient(60% 60% at 50% 50%, rgba(91,140,255,0.18), transparent 70%), radial-gradient(40% 40% at 80% 100%, rgba(255,122,0,0.18), transparent 70%)",
           }}
         />
         <div className="max-w-[1400px] mx-auto px-5 md:px-10 py-24 md:py-36">
@@ -420,32 +650,35 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
             {lang === "ru" ? "Присоединяйся" : "Join the pool"}
           </div>
           <h2
-            className="font-display font-bold leading-[0.86] tracking-[-0.04em] lowercase"
-            style={{ fontSize: "clamp(54px, 11vw, 180px)" }}
+            className="font-display font-bold leading-[0.86] tracking-[-0.04em] lowercase text-[#f1ece4]"
+            style={{
+              fontSize: "clamp(54px, 11vw, 180px)",
+              textShadow:
+                "0 4px 80px rgba(91, 140, 255, 0.3), 0 2px 30px rgba(255, 122, 0, 0.22)",
+            }}
           >
-            <span className="bs-text-gradient">
-              <TextReveal
-                text={
-                  lang === "ru"
-                    ? "твой следующий сет начинается здесь."
-                    : "your next set starts here."
-                }
-                stagger={0.03}
-              />
-            </span>
+            <TextReveal
+              text={
+                lang === "ru"
+                  ? "твой следующий сет начинается здесь."
+                  : "your next set starts here."
+              }
+              stagger={0.03}
+              trigger="mount"
+            />
           </h2>
           <div className="mt-10 flex flex-wrap items-center gap-4">
             <Link
               href={`${lp}/signup`}
               className="bs-button bs-button-primary text-base"
             >
-              {dict.home.hero.ctaJoin}
+              {lang === "ru" ? "Зарегистрироваться" : "Sign up free"} →
             </Link>
             <Link
-              href={`${lp}/pricing`}
+              href={`${lp}/catalog`}
               className="bs-button bs-button-ghost text-base"
             >
-              {dict.nav.pricing}
+              {lang === "ru" ? "Смотреть каталог" : "Browse catalog"}
             </Link>
           </div>
         </div>
