@@ -504,10 +504,15 @@ a {
   position: relative;
 }
 
-/* Glow halo for fire text. Apply on the *parent* element of .bs-fire. */
+/* Glow halo for fire text. Apply on the *parent* element of .bs-fire.
+   The parent must carry the same font properties so the ::before glow
+   matches the visible fire text in glyph metrics. */
 .bs-fire-glow {
   position: relative;
   display: inline-block;
+  font-family: var(--font-billboard, "Bebas Neue"), Impact, sans-serif;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
 }
 .bs-fire-glow::before {
   content: attr(data-text);

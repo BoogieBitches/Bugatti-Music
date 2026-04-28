@@ -49,10 +49,10 @@ export async function Header({ locale }: { locale: Locale }) {
           </span>
           <span className="relative inline-flex items-baseline">
             <span
-              className="bs-fire-glow bs-fire leading-none text-[26px] md:text-[30px] tracking-[0.01em]"
+              className="bs-fire-glow leading-none text-[26px] md:text-[30px] tracking-[0.01em]"
               data-text="Bugatti Sound"
             >
-              Bugatti Sound
+              <span className="bs-fire">Bugatti Sound</span>
             </span>
             <span className="ml-2 mb-[-2px] text-[10px] font-bold tracking-[0.4em] text-[var(--accent-2)]/90 self-end">
               POOL

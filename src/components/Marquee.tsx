@@ -37,11 +37,11 @@ export function Marquee({ items, speed = 38, className = "", noSeparator }: Prop
         {all.map((it, i) => (
           <span key={i} className="inline-flex items-center px-5 md:px-8">
             <span
-              className="bs-fire-glow leading-none bs-fire"
+              className="bs-fire-glow leading-none"
               data-text={it}
               style={{ fontSize: "clamp(34px, 6vw, 84px)" }}
             >
-              {it}
+              <span className="bs-fire">{it}</span>
             </span>
             {!noSeparator && (
               <span
