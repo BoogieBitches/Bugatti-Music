@@ -58,7 +58,7 @@ export function UploadForm({ locale, dict, genres, userId }: Props) {
       {
         const { error } = await supabase.storage
           .from("audio-tracks")
-          .upload(audioPath, audioFile, { upsert: true });
+          .upload(audioPath, audioFile, { upsert: false });
         if (error) throw error;
       }
 
@@ -68,7 +68,7 @@ export function UploadForm({ locale, dict, genres, userId }: Props) {
         previewPath = `${folder}/${safeFileName(previewFile.name)}`;
         const { error } = await supabase.storage
           .from("audio-previews")
-          .upload(previewPath, previewFile, { upsert: true });
+          .upload(previewPath, previewFile, { upsert: false });
         if (error) throw error;
       }
 
@@ -78,7 +78,7 @@ export function UploadForm({ locale, dict, genres, userId }: Props) {
         coverImagePath = `${folder}/${safeFileName(coverImage.name)}`;
         const { error } = await supabase.storage
           .from("covers")
-          .upload(coverImagePath, coverImage, { upsert: true });
+          .upload(coverImagePath, coverImage, { upsert: false });
         if (error) throw error;
       }
 
@@ -88,7 +88,7 @@ export function UploadForm({ locale, dict, genres, userId }: Props) {
         coverVideoPath = `${folder}/${safeFileName(coverVideo.name)}`;
         const { error } = await supabase.storage
           .from("covers")
-          .upload(coverVideoPath, coverVideo, { upsert: true });
+          .upload(coverVideoPath, coverVideo, { upsert: false });
         if (error) throw error;
       }
 
