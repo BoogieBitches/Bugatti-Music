@@ -1,0 +1,177 @@
+{
+  "brand": {
+    "name": "Bugatti Sound",
+    "tagline": "The music pool for serious DJs"
+  },
+  "nav": {
+    "catalog": "Catalog",
+    "pricing": "Pricing",
+    "upload": "Upload",
+    "dashboard": "Dashboard",
+    "admin": "Admin",
+    "login": "Sign in",
+    "signup": "Sign up",
+    "logout": "Sign out"
+  },
+  "common": {
+    "search": "Search",
+    "loading": "Loading…",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "submit": "Submit",
+    "back": "Back",
+    "play": "Play",
+    "pause": "Pause",
+    "download": "Download",
+    "previewOnly": "Preview only — upgrade to Premium for full download",
+    "premiumBadge": "Premium",
+    "free": "Free",
+    "yes": "Yes",
+    "no": "No",
+    "actions": "Actions",
+    "language": "Language",
+    "english": "English",
+    "russian": "Русский"
+  },
+  "home": {
+    "hero": {
+      "title": "Music for DJs that hits like a Bugatti",
+      "subtitle": "Discover, preview, and download fresh tracks across every style. Built for clubs, radio, and the road.",
+      "ctaBrowse": "Browse the catalog",
+      "ctaJoin": "Join free"
+    },
+    "features": {
+      "title": "Everything a modern pool needs",
+      "items": [
+        { "title": "Curated catalog", "body": "Hip-Hop, House, EDM, Reggaeton, Phonk and more — all moderated." },
+        { "title": "Crystal-clear previews", "body": "Listen to 30-second previews on any device, no signup required." },
+        { "title": "Premium downloads", "body": "Subscribe once, download every approved track in full quality." },
+        { "title": "Animated covers", "body": "Upload looping video or animated artwork — your tracks pop on every screen." }
+      ]
+    }
+  },
+  "auth": {
+    "loginTitle": "Sign in to Bugatti Sound",
+    "signupTitle": "Create your account",
+    "email": "Email",
+    "password": "Password",
+    "fullName": "Full name",
+    "submitLogin": "Sign in",
+    "submitSignup": "Create account",
+    "googleContinue": "Continue with Google",
+    "or": "or",
+    "haveAccount": "Already have an account?",
+    "noAccount": "Don't have an account?",
+    "checkEmail": "Check your email to confirm your address.",
+    "invalidCreds": "Invalid email or password.",
+    "passwordTooShort": "Password must be at least 8 characters.",
+    "logoutSuccess": "You have been signed out."
+  },
+  "catalog": {
+    "title": "Catalog",
+    "noResults": "No tracks match your filters yet.",
+    "filters": {
+      "genre": "Genre",
+      "style": "Style",
+      "minBpm": "Min BPM",
+      "maxBpm": "Max BPM",
+      "key": "Key",
+      "all": "All",
+      "search": "Search title, artist, style…",
+      "reset": "Reset"
+    },
+    "sort": {
+      "newest": "Newest",
+      "popular": "Most played"
+    }
+  },
+  "track": {
+    "by": "by",
+    "bpm": "BPM",
+    "key": "Key",
+    "duration": "Duration",
+    "uploaded": "Uploaded",
+    "plays": "Plays",
+    "downloads": "Downloads",
+    "downloadFull": "Download full track",
+    "downloadPreview": "Download preview",
+    "premiumGate": "Premium subscription required",
+    "loginToDownload": "Sign in to download"
+  },
+  "upload": {
+    "title": "Upload a track",
+    "intro": "Tracks are reviewed by our team before they appear in the public catalog.",
+    "trackTitle": "Track title",
+    "artist": "Artist name",
+    "genre": "Genre",
+    "style": "Style (e.g. afro house, drill, latin pop)",
+    "bpm": "BPM",
+    "key": "Musical key",
+    "description": "Description (optional)",
+    "audioFile": "Audio file (MP3 / WAV / FLAC)",
+    "previewFile": "30-sec preview (optional — auto-generated if omitted)",
+    "coverImage": "Cover image (jpg, png, webp)",
+    "coverVideo": "Cover video / animation (mp4, webm, gif — optional)",
+    "isPremiumOnly": "Premium-only download",
+    "submit": "Submit for review",
+    "successTitle": "Submitted for review",
+    "successBody": "Thanks! An admin will review your track shortly. You can track its status in your dashboard.",
+    "errorAudio": "Please attach an audio file.",
+    "errorTitle": "Title is required.",
+    "errorArtist": "Artist is required."
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "subscription": {
+      "title": "Subscription",
+      "free": "You are on the Free plan.",
+      "premiumActive": "Premium active until {date}",
+      "manage": "Manage subscription",
+      "upgrade": "Upgrade to Premium"
+    },
+    "myTracks": {
+      "title": "My tracks",
+      "empty": "You haven't uploaded any tracks yet.",
+      "status": {
+        "pending": "Pending review",
+        "approved": "Live",
+        "rejected": "Rejected"
+      }
+    }
+  },
+  "admin": {
+    "title": "Moderation",
+    "queue": "Pending queue",
+    "approved": "Approved",
+    "rejected": "Rejected",
+    "approve": "Approve",
+    "reject": "Reject",
+    "rejectReasonPlaceholder": "Reason (optional)",
+    "noPending": "Nothing waiting for review."
+  },
+  "pricing": {
+    "title": "Pricing",
+    "subtitle": "Free to listen. Premium to download.",
+    "free": {
+      "name": "Free",
+      "price": "$0",
+      "features": ["Browse the full catalog", "30-second previews on every track", "Submit your own tracks"]
+    },
+    "premium": {
+      "name": "Premium",
+      "price": "$9.99",
+      "period": "/ month",
+      "features": ["Unlimited full-quality downloads", "Early access to new uploads", "No ads, no limits", "Cancel anytime"],
+      "cta": "Start Premium"
+    }
+  },
+  "errors": {
+    "notFound": "Page not found.",
+    "generic": "Something went wrong. Please try again."
+  },
+  "footer": {
+    "rights": "All rights reserved."
+  }
+}
