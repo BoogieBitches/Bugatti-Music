@@ -27,7 +27,15 @@ export const env = {
   stripePremiumPriceId: () =>
     required("STRIPE_PREMIUM_PRICE_ID", process.env.STRIPE_PREMIUM_PRICE_ID),
 
-  appUrl: () => process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+  appUrl: () => {
+    if (process.env.NEXT_PUBLIC_APP_URL && process.env.NEXT_PUBLIC_APP_URL.length > 0) {
+      return process.env.NEXT_PUBLIC_APP_URL;
+    }
+    const vercelUrl =
+      process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL ?? null;
+    if (vercelUrl) return `https://${vercelUrl}`;
+    return "http://localhost:3000";
+  },
 
   // Optional: comma-separated list of emails to auto-promote to admin on first login.
   // (Only the FIRST signup that matches one of these emails becomes admin via /api/admin/bootstrap.)

@@ -27,19 +27,36 @@ export async function POST(request: NextRequest) {
 
   const admin = createSupabaseAdminClient();
 
+  function readPeriodEnd(sub: Stripe.Subscription): number | null {
+    // In Stripe API ≤ 2025, current_period_end lives on the subscription root.
+    // In API 2025-08+ (e.g. 2026-04-22.dahlia) it moved to subscription.items.data[i].current_period_end.
+    const root = (sub as unknown as { current_period_end?: number }).current_period_end;
+    if (typeof root === "number") return root;
+    const item = sub.items?.data?.[0] as unknown as { current_period_end?: number } | undefined;
+    if (item && typeof item.current_period_end === "number") return item.current_period_end;
+    return null;
+  }
+
   async function setPremium(
     customerId: string,
     subscriptionId: string | null,
     isActive: boolean,
     periodEnd: number | null,
   ) {
-    const { data: profile } = await admin
+    const { data: profile, error: selErr } = await admin
       .from("profiles")
       .select("id")
       .eq("stripe_customer_id", customerId)
       .maybeSingle();
-    if (!profile) return;
-    await admin
+    if (selErr) {
+      console.error("[stripe-webhook] profile lookup error", selErr, { customerId });
+      throw new Error(`profile lookup failed: ${selErr.message}`);
+    }
+    if (!profile) {
+      console.warn("[stripe-webhook] no profile for customer", { customerId });
+      return;
+    }
+    const { error: updErr } = await admin
       .from("profiles")
       .update({
         is_premium: isActive,
@@ -47,6 +64,20 @@ export async function POST(request: NextRequest) {
         premium_until: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
       })
       .eq("id", profile.id);
+    if (updErr) {
+      console.error("[stripe-webhook] profile update error", updErr, {
+        customerId,
+        profileId: profile.id,
+        isActive,
+      });
+      throw new Error(`profile update failed: ${updErr.message}`);
+    }
+    console.log("[stripe-webhook] premium updated", {
+      profileId: profile.id,
+      isActive,
+      subscriptionId,
+      periodEnd,
+    });
   }
 
   try {
@@ -59,7 +90,7 @@ export async function POST(request: NextRequest) {
             session.customer as string,
             sub.id,
             sub.status === "active" || sub.status === "trialing",
-            sub.current_period_end ?? null,
+            readPeriodEnd(sub),
           );
         }
         break;
@@ -71,7 +102,7 @@ export async function POST(request: NextRequest) {
           sub.customer as string,
           sub.id,
           sub.status === "active" || sub.status === "trialing",
-          sub.current_period_end ?? null,
+          readPeriodEnd(sub),
         );
         break;
       }
@@ -85,6 +116,7 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ received: true });
   } catch (e) {
+    console.error("[stripe-webhook] handler error", e, { eventType: event.type, eventId: event.id });
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
 }
