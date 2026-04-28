@@ -36,7 +36,7 @@ export async function POST(
 
   const { data: track } = await supabase
     .from("tracks")
-    .select("audio_path, status")
+    .select("audio_path, status, title, artist")
     .eq("id", id)
     .maybeSingle();
 
@@ -45,7 +45,22 @@ export async function POST(
     return NextResponse.json({ error: "Not available" }, { status: 403 });
   }
 
-  const url = await createSignedUrl("audio-tracks", track.audio_path, 60 * 5);
+  // Build a friendly download filename. Supabase appends Content-Disposition: attachment
+  // when the `download` option is passed, which forces browsers to save instead of stream.
+  const ext = track.audio_path.split(".").pop()?.toLowerCase() || "mp3";
+  const safe = (s: string) =>
+    s
+      .normalize("NFKD")
+      .replace(/[^\p{L}\p{N}\s._-]+/gu, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80);
+  const baseName = [track.artist, track.title].filter(Boolean).map(safe).join(" - ") || "track";
+  const downloadName = `${baseName}.${ext}`;
+
+  const url = await createSignedUrl("audio-tracks", track.audio_path, 60 * 5, {
+    download: downloadName,
+  });
   if (!url) return NextResponse.json({ error: "Could not sign URL" }, { status: 500 });
 
   // Best-effort increment of downloads_count using service role.

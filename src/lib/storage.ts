@@ -21,10 +21,13 @@ export async function createSignedUrl(
   bucket: "audio-tracks",
   path: string,
   expiresInSeconds = 60 * 5,
+  options?: { download?: string | true },
 ): Promise<string | null> {
   try {
     const admin = createSupabaseAdminClient();
-    const { data, error } = await admin.storage.from(bucket).createSignedUrl(path, expiresInSeconds);
+    const { data, error } = await admin.storage
+      .from(bucket)
+      .createSignedUrl(path, expiresInSeconds, options);
     if (error) return null;
     return data?.signedUrl ?? null;
   } catch {
