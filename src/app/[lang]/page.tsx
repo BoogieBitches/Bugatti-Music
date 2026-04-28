@@ -248,9 +248,9 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
         <div className="relative max-w-[1400px] mx-auto px-5 md:px-10 pt-12 md:pt-20 pb-10 md:pb-16">
           {/* Massive display title — fills width like BPM */}
           <h1
-            className="font-display font-bold leading-[0.86] tracking-[-0.04em] lowercase text-[#f1ece4]"
+            className="font-display font-bold leading-[0.86] tracking-[-0.05em] lowercase text-[#f1ece4] whitespace-nowrap"
             style={{
-              fontSize: "clamp(72px, 14vw, 220px)",
+              fontSize: "clamp(56px, 11.5vw, 168px)",
               textShadow:
                 "0 4px 80px rgba(91, 140, 255, 0.25), 0 2px 30px rgba(255, 122, 0, 0.18)",
             }}
@@ -319,7 +319,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                 <TextReveal
                   text={lang === "ru" ? "Trending" : "Trending"}
                   stagger={0.04}
-                  trigger="scroll"
+                  trigger="mount"
                 />
               </h2>
             </div>
@@ -361,7 +361,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
               <TextReveal
                 text={lang === "ru" ? "Subscribe" : "Subscribe"}
                 stagger={0.04}
-                trigger="scroll"
+                trigger="mount"
               />
             </h2>
             <p className="mt-6 text-[var(--muted)] text-base md:text-xl max-w-2xl">
@@ -395,7 +395,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
               <TextReveal
                 text={lang === "ru" ? "Plans" : "Plans"}
                 stagger={0.04}
-                trigger="scroll"
+                trigger="mount"
               />
             </h2>
           </div>
@@ -465,7 +465,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
               <TextReveal
                 text={lang === "ru" ? "Everything." : "Everything."}
                 stagger={0.04}
-                trigger="scroll"
+                trigger="mount"
               />
             </h2>
           </div>
@@ -504,7 +504,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                 <TextReveal
                   text={lang === "ru" ? "Genres" : "Genres"}
                   stagger={0.04}
-                  trigger="scroll"
+                  trigger="mount"
                 />
               </h2>
             </div>
@@ -572,7 +572,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                 <TextReveal
                   text={lang === "ru" ? "New" : "New"}
                   stagger={0.04}
-                  trigger="scroll"
+                  trigger="mount"
                 />
               </h2>
             </div>
@@ -664,7 +664,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                   : "your next set starts here."
               }
               stagger={0.03}
-              trigger="scroll"
+              trigger="mount"
             />
           </h2>
           <div className="mt-10 flex flex-wrap items-center gap-4">
