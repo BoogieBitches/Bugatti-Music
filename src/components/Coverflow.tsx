@@ -72,7 +72,9 @@ export function Coverflow({
           style={{ transformStyle: "preserve-3d" }}
         >
           {VISIBLE.map((offset) => {
-            const slot = (safeIndex + offset + len) % len;
+            // Proper modulo: JS `%` preserves sign of the dividend, so when
+            // `len < 3` `(safeIndex + offset + len)` can still be negative.
+            const slot = (((safeIndex + offset) % len) + len) % len;
             const t = tracks[slot];
             const cover =
               t.cover_image_path && supabaseUrl
