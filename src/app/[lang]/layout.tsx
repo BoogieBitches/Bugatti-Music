@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { Inter, Space_Grotesk } from "next/font/google";
+import { Inter, Space_Grotesk, Permanent_Marker } from "next/font/google";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { getDictionary } from "@/i18n/dictionaries";
 import { isLocale } from "@/i18n/config";
@@ -22,6 +22,13 @@ const display = Space_Grotesk({
   variable: "--font-display",
   display: "swap",
   weight: ["500", "600", "700"],
+});
+
+const graffiti = Permanent_Marker({
+  subsets: ["latin"],
+  variable: "--font-graffiti",
+  display: "swap",
+  weight: ["400"],
 });
 
 export const metadata = {
@@ -58,7 +65,10 @@ export default async function LangLayout({
   const dict = await getDictionary(lang);
 
   return (
-    <html lang={lang} className={`${sans.variable} ${display.variable}`}>
+    <html
+      lang={lang}
+      className={`${sans.variable} ${display.variable} ${graffiti.variable}`}
+    >
       <body>
         <AuroraBackground />
         <CursorSpotlight />

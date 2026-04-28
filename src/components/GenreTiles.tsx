@@ -1,62 +1,74 @@
 "use client";
 
-import Link from "next/link";
-import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 import { useI18n } from "@/i18n/I18nProvider";
 import type { Genre } from "@/types/db";
+import { DrumPad } from "./DrumPad";
 
-const PALETTE: Array<[string, string]> = [
-  ["#5b8cff", "#7b49ff"], // blue → violet
-  ["#ff7a00", "#ff3d6b"], // orange → pink
-  ["#00d4ff", "#5b8cff"], // cyan → blue
-  ["#ff3d6b", "#7b49ff"], // pink → violet
-  ["#22c55e", "#00d4ff"], // green → cyan
-  ["#ff7a00", "#ffd000"], // orange → yellow
-  ["#7b49ff", "#ff3d6b"], // violet → pink
-  ["#5b8cff", "#22c55e"], // blue → green
+/** Per-genre LED palette — falls back to the brand cyan. */
+const COLOR_BY_SLUG: Record<string, string> = {
+  "hip-hop": "#ff7a00",
+  hiphop: "#ff7a00",
+  rap: "#ff7a00",
+  trap: "#ff3d6b",
+  drill: "#ff3d6b",
+  phonk: "#7b49ff",
+  rnb: "#ff3d6b",
+  "r-n-b": "#ff3d6b",
+  reggaeton: "#ff3d6b",
+  latin: "#ffd000",
+  amapiano: "#22c55e",
+  afro: "#22c55e",
+  "afro-house": "#22c55e",
+  house: "#5b8cff",
+  "tech-house": "#00d4ff",
+  "deep-house": "#5b8cff",
+  techno: "#7b49ff",
+  edm: "#ff7a00",
+  bass: "#5b8cff",
+  "bass-house": "#5b8cff",
+  "drum-and-bass": "#00d4ff",
+  dnb: "#00d4ff",
+  dubstep: "#7b49ff",
+  pop: "#ff3d6b",
+  rock: "#ffffff",
+  electronic: "#5b8cff",
+};
+
+const FALLBACK_PALETTE = [
+  "#5b8cff",
+  "#ff7a00",
+  "#ff3d6b",
+  "#7b49ff",
+  "#00d4ff",
+  "#22c55e",
+  "#ffd000",
+  "#b6e1ff",
 ];
 
 export function GenreTiles({ genres }: { genres: Genre[] }) {
   const { locale } = useI18n();
+  const router = useRouter();
+  const list = genres.slice(0, 8);
+
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-      {genres.slice(0, 8).map((g, i) => {
-        const [c1, c2] = PALETTE[i % PALETTE.length];
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
+      {list.map((g, i) => {
         const name = locale === "ru" ? g.name_ru : g.name_en;
+        const color =
+          COLOR_BY_SLUG[g.slug.toLowerCase()] ??
+          FALLBACK_PALETTE[i % FALLBACK_PALETTE.length];
         return (
-          <motion.div
+          <DrumPad
             key={g.id}
-            initial={{ opacity: 0, scale: 0.96 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            whileHover={{ scale: 1.03, y: -3 }}
-            viewport={{ once: true, margin: "-40px" }}
-            transition={{ duration: 0.5, delay: i * 0.05 }}
-          >
-            <Link
-              href={`/${locale}/catalog?genre=${g.slug}`}
-              className="relative block aspect-[5/3] rounded-2xl overflow-hidden p-4 ring-1 ring-white/10 hover:ring-white/30 transition"
-              style={{ background: `linear-gradient(135deg, ${c1}, ${c2})` }}
-            >
-              <span
-                aria-hidden
-                className="absolute inset-0 mix-blend-overlay opacity-30"
-                style={{
-                  backgroundImage:
-                    "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.7'/></svg>\")",
-                }}
-              />
-              <span
-                aria-hidden
-                className="absolute -bottom-8 -right-6 text-[88px] leading-none font-display font-bold opacity-20 select-none"
-                style={{ color: "rgba(255,255,255,0.85)" }}
-              >
-                {name.slice(0, 2).toUpperCase()}
-              </span>
-              <span className="relative z-10 font-display font-bold text-xl md:text-2xl tracking-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.35)]">
-                {name}
-              </span>
-            </Link>
-          </motion.div>
+            color={color}
+            label={name}
+            caption={`PAD ${String(i + 1).padStart(2, "0")}`}
+            ariaLabel={`Browse ${name}`}
+            onClick={() =>
+              router.push(`/${locale}/catalog?genre=${g.slug}`)
+            }
+          />
         );
       })}
     </div>

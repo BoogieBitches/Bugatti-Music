@@ -6,7 +6,8 @@ import { notFound } from "next/navigation";
 import { hasSupabaseEnv } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Genre, TrackWithGenre } from "@/types/db";
-import { Hero3D } from "@/components/Hero3D";
+import { DrumMachine } from "@/components/DrumMachine";
+import { GraffitiTitle } from "@/components/GraffitiTitle";
 import { TrackCard } from "@/components/TrackCard";
 import { TopChartList } from "@/components/TopChartList";
 import { GenreTiles } from "@/components/GenreTiles";
@@ -87,14 +88,31 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
   return (
     <div>
       {/* HERO */}
-      <section className="relative">
-        <div className="max-w-7xl mx-auto px-4 pt-10 md:pt-16 pb-10 md:pb-16">
-          <div className="grid md:grid-cols-12 gap-10 items-center">
-            <div className="md:col-span-7">
+      <section className="relative overflow-hidden">
+        {/* Giant graffiti tag in the background */}
+        <div className="absolute inset-0 -z-[1] flex items-center justify-center">
+          <GraffitiTitle
+            lines={["BUGATTI", "SOUND"]}
+            className="relative w-full max-w-[1400px] mx-auto opacity-90"
+          />
+        </div>
+        {/* Subtle scrim so foreground text reads cleanly */}
+        <div
+          aria-hidden
+          className="absolute inset-0 -z-[1]"
+          style={{
+            background:
+              "radial-gradient(60% 60% at 30% 50%, rgba(5,6,8,0.65), transparent 70%), radial-gradient(60% 60% at 80% 60%, rgba(5,6,8,0.7), transparent 70%)",
+          }}
+        />
+
+        <div className="relative max-w-7xl mx-auto px-4 pt-12 md:pt-20 pb-12 md:pb-20">
+          <div className="grid md:grid-cols-12 gap-10 md:gap-14 items-center">
+            <div className="md:col-span-6">
               <span className="bs-badge bs-badge-premium">
                 {dict.brand.name}
               </span>
-              <h1 className="mt-5 font-display text-[44px] sm:text-6xl md:text-7xl lg:text-[88px] leading-[0.95] font-bold tracking-tighter">
+              <h1 className="mt-5 font-display text-[42px] sm:text-6xl md:text-7xl lg:text-[80px] leading-[0.95] font-bold tracking-tighter">
                 <span className="bs-text-gradient">{dict.home.hero.title}</span>
               </h1>
               <p className="mt-6 text-[var(--muted)] text-lg md:text-xl max-w-xl">
@@ -129,8 +147,8 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                 </div>
               </div>
             </div>
-            <div className="md:col-span-5">
-              <Hero3D />
+            <div className="md:col-span-6">
+              <DrumMachine />
             </div>
           </div>
         </div>

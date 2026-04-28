@@ -252,6 +252,213 @@ a {
   animation: bs-shimmer 2.4s linear infinite;
 }
 
+/* ---------- Drum pad (MPC / Maschine-inspired) ---------- */
+
+.drum-pad {
+  --led: #5b8cff;
+  position: relative;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 18px;
+  isolation: isolate;
+  cursor: pointer;
+  filter: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.55));
+  transition: filter 200ms ease;
+}
+
+.drum-pad:focus-visible {
+  outline: 2px solid var(--led);
+  outline-offset: 4px;
+}
+
+.drum-pad:hover {
+  filter: drop-shadow(0 20px 32px rgba(0, 0, 0, 0.65))
+    drop-shadow(0 0 24px color-mix(in oklab, var(--led) 70%, transparent));
+}
+
+/* The dark, slightly-recessed inner pad face. */
+.drum-pad-face {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.09), transparent 55%),
+    linear-gradient(180deg, #1a1f2c 0%, #0a0d14 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.6),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  z-index: 1;
+}
+
+/* Glowing LED ring around the pad. */
+.drum-pad-led {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in oklab, var(--led) 65%, black),
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 12px -2px color-mix(in oklab, var(--led) 60%, transparent);
+  opacity: 0.8;
+  transition: opacity 250ms ease, box-shadow 250ms ease;
+  z-index: 2;
+}
+.drum-pad:hover .drum-pad-led,
+.drum-pad[data-active="true"] .drum-pad-led {
+  opacity: 1;
+  box-shadow:
+    inset 0 0 0 1.5px var(--led),
+    0 0 0 1px rgba(0, 0, 0, 0.7),
+    0 0 28px -2px color-mix(in oklab, var(--led) 90%, transparent),
+    0 0 48px -8px color-mix(in oklab, var(--led) 70%, transparent);
+}
+
+/* Top gloss highlight. */
+.drum-pad-gloss {
+  position: absolute;
+  inset: 6% 8% auto 8%;
+  height: 28%;
+  border-radius: 14px 14px 40% 40% / 14px 14px 60% 60%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0.9;
+}
+
+.drum-pad-content {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  padding: 10px 8px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+}
+
+.drum-pad-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 1.6em;
+  height: 1.6em;
+  margin-bottom: 2px;
+  color: color-mix(in oklab, var(--led) 80%, white 20%);
+  filter: drop-shadow(0 0 6px color-mix(in oklab, var(--led) 80%, transparent));
+}
+
+.drum-pad-label {
+  font-size: 0.95em;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+.drum-pad-caption {
+  font-size: 0.62em;
+  color: rgba(255, 255, 255, 0.45);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* Active = lit LED on the inside as well */
+.drum-pad[data-active="true"] .drum-pad-face {
+  background:
+    radial-gradient(140% 100% at 50% 0%, color-mix(in oklab, var(--led) 22%, transparent), transparent 60%),
+    linear-gradient(180deg, #20283a 0%, #0d1220 100%);
+}
+.drum-pad[data-active="true"] .drum-pad-icon {
+  color: #fff;
+  filter: drop-shadow(0 0 12px var(--led));
+}
+
+/* ---------- Graffiti background tag ---------- */
+
+.bs-graffiti {
+  font-family: var(--font-graffiti, "Permanent Marker"), "Caveat", "Comic Sans MS", cursive;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 0.85;
+  text-transform: uppercase;
+  color: transparent;
+  /* Multi-layer extrude: each shadow offset 1px deeper, alternating brand colors */
+  text-shadow:
+    1px 1px 0 rgba(91, 140, 255, 0.95),
+    2px 2px 0 rgba(91, 140, 255, 0.92),
+    3px 3px 0 rgba(91, 140, 255, 0.88),
+    4px 4px 0 rgba(123, 73, 255, 0.85),
+    5px 5px 0 rgba(123, 73, 255, 0.82),
+    6px 6px 0 rgba(255, 61, 107, 0.78),
+    7px 7px 0 rgba(255, 61, 107, 0.74),
+    8px 8px 0 rgba(255, 122, 0, 0.7),
+    9px 9px 0 rgba(255, 122, 0, 0.65),
+    10px 10px 0 rgba(255, 122, 0, 0.6),
+    11px 11px 0 rgba(0, 0, 0, 0.7),
+    12px 12px 24px rgba(0, 0, 0, 0.55);
+  -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.85);
+}
+
+.bs-graffiti-spray {
+  /* Rough spray-paint silhouette filter */
+  filter: url(#bs-spray) contrast(1.05);
+}
+
+/* ---------- 3D extruded marquee text ---------- */
+
+.bs-3d-text {
+  font-family: var(--font-display, "Space Grotesk"), ui-sans-serif, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  color: #fff;
+  /* Stack of shadows simulates a 3D extrusion */
+  text-shadow:
+    1px 1px 0 rgba(255, 255, 255, 0.18),
+    2px 2px 0 var(--bs-3d-color, var(--accent)),
+    3px 3px 0 color-mix(in oklab, var(--bs-3d-color, var(--accent)) 88%, black),
+    4px 4px 0 color-mix(in oklab, var(--bs-3d-color, var(--accent)) 76%, black),
+    5px 5px 0 color-mix(in oklab, var(--bs-3d-color, var(--accent)) 64%, black),
+    6px 6px 0 color-mix(in oklab, var(--bs-3d-color, var(--accent)) 52%, black),
+    7px 7px 0 color-mix(in oklab, var(--bs-3d-color, var(--accent)) 40%, black),
+    8px 8px 12px rgba(0, 0, 0, 0.5);
+}
+
+.bs-3d-text-outline {
+  -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.85);
+  color: transparent;
+  text-shadow:
+    2px 2px 0 var(--bs-3d-color, var(--accent)),
+    4px 4px 0 color-mix(in oklab, var(--bs-3d-color, var(--accent)) 70%, black),
+    6px 6px 0 color-mix(in oklab, var(--bs-3d-color, var(--accent)) 40%, black),
+    8px 8px 16px rgba(0, 0, 0, 0.55);
+}
+
+/* ---------- Sequencer pulse (used by drum machine grid) ---------- */
+
+@keyframes bs-pulse-led {
+  0% {
+    box-shadow:
+      inset 0 0 0 1.5px var(--led),
+      0 0 0 1px rgba(0, 0, 0, 0.7),
+      0 0 32px 0 color-mix(in oklab, var(--led) 95%, transparent),
+      0 0 64px -8px color-mix(in oklab, var(--led) 80%, transparent);
+  }
+  100% {
+    box-shadow:
+      inset 0 0 0 1.5px color-mix(in oklab, var(--led) 60%, black),
+      0 0 0 1px rgba(0, 0, 0, 0.6),
+      0 0 12px -2px color-mix(in oklab, var(--led) 60%, transparent);
+  }
+}
+
 /* ---------- Scrollbar ---------- */
 ::-webkit-scrollbar {
   width: 10px;
