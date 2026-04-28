@@ -29,6 +29,10 @@ export function Coverflow({
 }: Props) {
   const [index, setIndex] = useState(0);
   const len = tracks.length;
+  // Clamp into valid range — `tracks` may shrink between renders (e.g. locale
+  // switch with a different fallback list), and a stale `index` would
+  // otherwise point past the end of the array.
+  const safeIndex = len > 0 ? ((index % len) + len) % len : 0;
 
   const next = useCallback(
     () => setIndex((i) => (i + 1) % len),
@@ -49,7 +53,7 @@ export function Coverflow({
 
   // Visible window: -3..+3 around the active index (7 covers total).
   const VISIBLE = [-3, -2, -1, 0, 1, 2, 3] as const;
-  const cur = tracks[index];
+  const cur = tracks[safeIndex];
   const genreName = cur.genre
     ? locale === "ru"
       ? cur.genre.name_ru
@@ -68,7 +72,7 @@ export function Coverflow({
           style={{ transformStyle: "preserve-3d" }}
         >
           {VISIBLE.map((offset) => {
-            const slot = (index + offset + len) % len;
+            const slot = (safeIndex + offset + len) % len;
             const t = tracks[slot];
             const cover =
               t.cover_image_path && supabaseUrl
@@ -162,12 +166,12 @@ export function Coverflow({
       {/* Caption — genre + track */}
       <div className="mt-6 grid md:grid-cols-12 gap-6 items-end">
         <div className="md:col-span-1 text-[11px] tracking-[0.28em] uppercase text-white/60 font-display tabular-nums">
-          {String(index + 1).padStart(2, "0")} / {String(len).padStart(2, "0")}
+          {String(safeIndex + 1).padStart(2, "0")} / {String(len).padStart(2, "0")}
         </div>
         <div className="md:col-span-7">
           <AnimatePresence mode="wait">
             <motion.div
-              key={`label-${index}`}
+              key={`label-${safeIndex}`}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
