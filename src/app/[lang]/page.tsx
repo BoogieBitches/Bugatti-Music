@@ -234,28 +234,23 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
 
   return (
     <div>
-      {/* HERO — BPM-Supreme-style massive lowercase title only */}
-      <section className="relative overflow-hidden">
-        <div
-          aria-hidden
-          className="absolute inset-0 -z-[1]"
-          style={{
-            background:
-              "radial-gradient(60% 60% at 50% 30%, rgba(91,140,255,0.18), transparent 70%), radial-gradient(50% 50% at 80% 80%, rgba(255,122,0,0.14), transparent 70%)",
-          }}
-        />
+      {/* HERO — POOL UP with violet halo background */}
+      <section className="hero-violet relative overflow-hidden">
+        <div aria-hidden className="hero-violet-bg" />
+        <div aria-hidden className="hero-violet-stars" />
+        <div aria-hidden className="hero-violet-halo" />
 
         <div className="relative max-w-[1400px] mx-auto px-5 md:px-10 pt-12 md:pt-20 pb-10 md:pb-16">
-          {/* Massive display title — POOL UP with 3D blinking up-arrow */}
+          {/* Massive display title — pool up with 3D animated up-arrow */}
           <h1
-            className="font-display font-bold leading-[0.86] tracking-[-0.04em] text-[#f1ece4] whitespace-nowrap flex items-center gap-[0.12em]"
+            className="font-display font-bold leading-[0.86] tracking-[-0.04em] text-[#f1ece4] lowercase whitespace-nowrap flex items-center gap-[0.12em]"
             style={{
               fontSize: "clamp(72px, 14vw, 220px)",
               textShadow:
-                "0 4px 80px rgba(91, 140, 255, 0.25), 0 2px 30px rgba(255, 122, 0, 0.18)",
+                "0 4px 80px rgba(150, 110, 255, 0.45), 0 2px 30px rgba(108, 76, 255, 0.35)",
             }}
           >
-            <TextReveal text="POOL UP" stagger={0.05} trigger="mount" />
+            <TextReveal text="pool up" stagger={0.05} trigger="mount" />
             <span
               aria-hidden
               className="pool-up-arrow inline-flex shrink-0"
@@ -275,10 +270,10 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                     x2="0"
                     y2="1"
                   >
-                    <stop offset="0%" stopColor="#fff0a0" />
-                    <stop offset="35%" stopColor="#ffc94d" />
-                    <stop offset="65%" stopColor="#ff8a1a" />
-                    <stop offset="100%" stopColor="#c11d00" />
+                    <stop offset="0%" stopColor="#e8defc" />
+                    <stop offset="30%" stopColor="#b89dff" />
+                    <stop offset="65%" stopColor="#7a55ff" />
+                    <stop offset="100%" stopColor="#3b1d9c" />
                   </linearGradient>
                   <linearGradient
                     id="poolUpEdge"
@@ -287,29 +282,26 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                     x2="1"
                     y2="1"
                   >
-                    <stop offset="0%" stopColor="#5a0a00" />
-                    <stop offset="100%" stopColor="#ff3d00" />
+                    <stop offset="0%" stopColor="#1a0e4d" />
+                    <stop offset="100%" stopColor="#6845e8" />
                   </linearGradient>
                 </defs>
-                {/* Back layer for 3D extrude */}
                 <polygon
                   points="50,10 90,55 70,55 70,90 30,90 30,55 10,55"
                   fill="url(#poolUpEdge)"
                   transform="translate(6 6)"
                   opacity="0.55"
                 />
-                {/* Front layer */}
                 <polygon
                   points="50,10 90,55 70,55 70,90 30,90 30,55 10,55"
                   fill="url(#poolUpFill)"
-                  stroke="#ffd87a"
+                  stroke="#cdb8ff"
                   strokeWidth="1.5"
                   strokeLinejoin="round"
                 />
-                {/* Top highlight */}
                 <polygon
                   points="50,14 86,54 72,54 72,46 28,46 28,54 14,54"
-                  fill="rgba(255,255,255,0.32)"
+                  fill="rgba(255,255,255,0.36)"
                 />
               </svg>
             </span>

@@ -106,7 +106,7 @@ export function SideRail({
 
   return (
     <aside
-      className="fixed left-0 top-0 z-40 hidden md:flex flex-col h-screen transition-[width] duration-300 ease-out bg-[rgba(8,9,12,0.94)] backdrop-blur-xl border-r border-white/[0.06] overflow-visible"
+      className="fixed left-0 top-0 z-40 hidden md:flex flex-col h-screen transition-[width] duration-300 ease-out bg-[rgba(12,8,28,0.94)] backdrop-blur-xl border-r border-[rgba(122,85,255,0.12)] overflow-visible"
       style={{ width: expanded ? 224 : 56 }}
       aria-label={dict.nav.primaryNav}
     >
@@ -214,8 +214,8 @@ function RailLink({
       title={expanded ? undefined : item.label}
       className={`relative flex items-center gap-3 h-10 rounded-lg pl-[12px] pr-2 text-[14px] font-semibold transition-colors ${
         active
-          ? "text-white bg-white/[0.06]"
-          : "text-white/55 hover:text-white hover:bg-white/[0.04]"
+          ? "text-white bg-[rgba(122,85,255,0.14)]"
+          : "text-[rgba(220,210,255,0.7)] hover:text-white hover:bg-[rgba(122,85,255,0.10)]"
       }`}
     >
       {active && (
@@ -225,11 +225,14 @@ function RailLink({
           style={{
             background:
               "linear-gradient(180deg, var(--accent), var(--accent-2))",
-            boxShadow: "0 0 12px rgba(255,122,0,0.55)",
+            boxShadow: "0 0 14px rgba(122,85,255,0.7)",
           }}
         />
       )}
-      <Icon className="w-[18px] h-[18px] shrink-0" />
+      <Icon
+        className="w-[18px] h-[18px] shrink-0"
+        style={{ color: active ? "var(--accent-2)" : undefined }}
+      />
       <span
         className="whitespace-nowrap transition-opacity duration-200"
         style={{ opacity: expanded ? 1 : 0 }}
