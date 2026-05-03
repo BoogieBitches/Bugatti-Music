@@ -10,19 +10,10 @@ interface Props {
   noSeparator?: boolean;
 }
 
-const COLORS = [
-  "#ff7a00", // orange
-  "#5b8cff", // electric blue
-  "#ffffff", // white
-  "#ff3d6b", // pink
-  "#b6e1ff", // cyan glow
-  "#7b49ff", // violet
-];
-
 /**
- * Infinite horizontal ticker, but each item is rendered with a chunky 3D
- * text-extrude effect (multi-layered text-shadow) that rotates a tiny bit
- * to feel hand-stamped. Items rotate through a brand color palette.
+ * Infinite horizontal ticker rendered in a heavy display font (Bebas Neue)
+ * with a "burning" fire-painted text effect. Each item is wrapped in a
+ * .bs-fire-glow container so the flames shimmer above the letters.
  */
 export function Marquee({ items, speed = 38, className = "", noSeparator }: Props) {
   // Duplicate to enable seamless loop.
@@ -30,9 +21,8 @@ export function Marquee({ items, speed = 38, className = "", noSeparator }: Prop
 
   return (
     <div
-      className={`relative overflow-hidden py-5 md:py-7 ${className}`}
+      className={`relative overflow-hidden py-6 md:py-9 ${className}`}
       style={{
-        perspective: 600,
         maskImage:
           "linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent)",
         WebkitMaskImage:
@@ -43,38 +33,29 @@ export function Marquee({ items, speed = 38, className = "", noSeparator }: Prop
         className="flex whitespace-nowrap will-change-transform items-center"
         animate={{ x: ["0%", "-50%"] }}
         transition={{ duration: speed, ease: "linear", repeat: Infinity }}
-        style={{ transformStyle: "preserve-3d" }}
       >
-        {all.map((it, i) => {
-          const color = COLORS[i % COLORS.length];
-          const tilt = i % 2 === 0 ? -2 : 2;
-          return (
+        {all.map((it, i) => (
+          <span key={i} className="inline-flex items-center px-5 md:px-8">
             <span
-              key={i}
-              className="bs-3d-text inline-flex items-center px-4 md:px-7"
-              style={
-                {
-                  "--bs-3d-color": color,
-                  fontSize: "clamp(28px, 5.2vw, 72px)",
-                  transform: `rotate(${tilt}deg)`,
-                } as React.CSSProperties
-              }
+              className="bs-fire-glow leading-none"
+              data-text={it}
+              style={{ fontSize: "clamp(34px, 6vw, 84px)" }}
             >
-              {it}
-              {!noSeparator && (
-                <span
-                  aria-hidden
-                  className="mx-3 md:mx-5 inline-block w-2.5 h-2.5 rounded-full align-middle"
-                  style={{
-                    background: color,
-                    boxShadow: `0 0 18px ${color}`,
-                    transform: "translateY(-0.35em)",
-                  }}
-                />
-              )}
+              <span className="bs-fire">{it}</span>
             </span>
-          );
-        })}
+            {!noSeparator && (
+              <span
+                aria-hidden
+                className="mx-4 md:mx-7 inline-block w-2.5 h-2.5 rounded-full align-middle"
+                style={{
+                  background: "#ff7a00",
+                  boxShadow: "0 0 22px #ff7a00, 0 0 44px rgba(255,90,0,0.55)",
+                  transform: "translateY(-0.35em)",
+                }}
+              />
+            )}
+          </span>
+        ))}
       </motion.div>
     </div>
   );

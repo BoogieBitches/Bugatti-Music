@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { Inter, Space_Grotesk, Permanent_Marker } from "next/font/google";
+import { Inter, Space_Grotesk, Permanent_Marker, Bebas_Neue } from "next/font/google";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { getDictionary } from "@/i18n/dictionaries";
 import { isLocale } from "@/i18n/config";
@@ -7,6 +7,7 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { AuroraBackground } from "@/components/AuroraBackground";
 import { CursorSpotlight } from "@/components/CursorSpotlight";
+import { SideRailServer } from "@/components/SideRailServer";
 import "../globals.css";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,13 @@ const display = Space_Grotesk({
 const graffiti = Permanent_Marker({
   subsets: ["latin"],
   variable: "--font-graffiti",
+  display: "swap",
+  weight: ["400"],
+});
+
+const billboard = Bebas_Neue({
+  subsets: ["latin"],
+  variable: "--font-billboard",
   display: "swap",
   weight: ["400"],
 });
@@ -67,13 +75,14 @@ export default async function LangLayout({
   return (
     <html
       lang={lang}
-      className={`${sans.variable} ${display.variable} ${graffiti.variable}`}
+      className={`${sans.variable} ${display.variable} ${graffiti.variable} ${billboard.variable}`}
     >
       <body>
         <AuroraBackground />
         <CursorSpotlight />
         <I18nProvider locale={lang} dict={dict}>
-          <div className="relative min-h-screen flex flex-col">
+          <SideRailServer locale={lang} />
+          <div className="relative min-h-screen flex flex-col md:pl-[56px]">
             <Header locale={lang} />
             <main className="flex-1">{children}</main>
             <Footer locale={lang} />

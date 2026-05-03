@@ -35,41 +35,49 @@ export async function Header({ locale }: { locale: Locale }) {
   const lp = `/${locale}`;
   return (
     <header className="sticky top-0 z-30 backdrop-blur-xl bg-[rgba(5,6,8,0.55)] border-b border-[var(--border)]">
-      <div className="max-w-7xl mx-auto px-4 h-16 flex items-center gap-4">
-        <Link href={lp} className="flex items-center gap-2.5 group">
-          <span className="relative inline-block w-9 h-9 rounded-xl overflow-hidden ring-1 ring-white/10 transition-transform group-hover:scale-105">
+      <div className="max-w-7xl mx-auto px-4 h-20 flex items-center gap-5">
+        <Link href={lp} className="flex items-center gap-3 group shrink-0">
+          <span className="relative inline-block w-11 h-11 rounded-xl overflow-hidden ring-1 ring-white/10 transition-transform group-hover:scale-105">
             <Image
               src="/bugatti-logo.png"
               alt="Bugatti Sound"
               fill
-              sizes="36px"
+              sizes="44px"
               className="object-contain"
               priority
             />
           </span>
-          <span className="font-display font-bold tracking-tight text-[15px]">
-            BUGATTI <span className="text-[var(--accent-2)]">SOUND</span>
+          <span className="relative inline-flex items-baseline">
+            <span
+              className="bs-fire-glow leading-none text-[26px] md:text-[30px] tracking-[0.01em]"
+              data-text="Bugatti Sound"
+            >
+              <span className="bs-fire">Bugatti Sound</span>
+            </span>
+            <span className="ml-2 mb-[-2px] text-[10px] font-bold tracking-[0.4em] text-[var(--accent-2)]/90 self-end">
+              POOL
+            </span>
           </span>
         </Link>
-        <nav className="hidden md:flex items-center gap-0.5 ml-4 text-sm text-[var(--muted)]">
-          <Link href={`${lp}/catalog`} className="px-3 py-1.5 hover:text-white transition-colors">
+        <nav className="hidden md:flex items-center gap-1 ml-2 text-[15px] font-semibold text-white/80">
+          <Link href={`${lp}/catalog`} className="px-3 py-2 rounded-md hover:text-white hover:bg-white/5 transition-colors">
             {dict.nav.catalog}
           </Link>
-          <Link href={`${lp}/pricing`} className="px-3 py-1.5 hover:text-white transition-colors">
+          <Link href={`${lp}/pricing`} className="px-3 py-2 rounded-md hover:text-white hover:bg-white/5 transition-colors">
             {dict.nav.pricing}
           </Link>
           {userEmail && (
-            <Link href={`${lp}/upload`} className="px-3 py-1.5 hover:text-white transition-colors">
+            <Link href={`${lp}/upload`} className="px-3 py-2 rounded-md hover:text-white hover:bg-white/5 transition-colors">
               {dict.nav.upload}
             </Link>
           )}
           {userEmail && (
-            <Link href={`${lp}/dashboard`} className="px-3 py-1.5 hover:text-white transition-colors">
+            <Link href={`${lp}/dashboard`} className="px-3 py-2 rounded-md hover:text-white hover:bg-white/5 transition-colors">
               {dict.nav.dashboard}
             </Link>
           )}
           {role === "admin" && (
-            <Link href={`${lp}/admin`} className="px-3 py-1.5 hover:text-white transition-colors">
+            <Link href={`${lp}/admin`} className="px-3 py-2 rounded-md hover:text-white hover:bg-white/5 transition-colors">
               {dict.nav.admin}
             </Link>
           )}
