@@ -14,7 +14,10 @@
     "admin": "Admin",
     "login": "Sign in",
     "signup": "Sign up",
-    "logout": "Sign out"
+    "logout": "Sign out",
+    "primaryNav": "Primary navigation",
+    "expandNav": "Expand navigation",
+    "collapseNav": "Collapse navigation"
   },
   "common": {
     "search": "Search",

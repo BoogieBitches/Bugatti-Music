@@ -108,13 +108,13 @@ export function SideRail({
     <aside
       className="fixed left-0 top-0 z-40 hidden md:flex flex-col h-screen transition-[width] duration-300 ease-out bg-[rgba(8,9,12,0.94)] backdrop-blur-xl border-r border-white/[0.06] overflow-visible"
       style={{ width: expanded ? 224 : 56 }}
-      aria-label="Primary navigation"
+      aria-label={dict.nav.primaryNav}
     >
       {/* Toggle chevron — sits on the rail's right edge */}
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        aria-label={expanded ? "Свернуть навигацию" : "Развернуть навигацию"}
+        aria-label={expanded ? dict.nav.collapseNav : dict.nav.expandNav}
         aria-expanded={expanded}
         className="absolute -right-3 top-[64px] z-10 flex items-center justify-center w-6 h-6 rounded-full bg-[rgba(20,22,28,0.96)] border border-white/10 text-white/70 hover:text-white hover:bg-[var(--accent)] hover:border-[var(--accent)] transition-colors shadow-[0_2px_10px_rgba(0,0,0,0.5)]"
       >
