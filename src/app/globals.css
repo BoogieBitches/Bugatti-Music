@@ -479,17 +479,20 @@ a {
    yellow→orange→red→dark gradient that subtly shifts to feel like flames
    licking up. Pair with a wrapping element if you also want a glow. */
 .bs-fire {
+  /* Tightly packed gradient — every stop is in the visible color range so
+     the effect reads as fire even at small (header) sizes. White was
+     pulled out so glyphs never look flat-white at low font sizes. */
   background: linear-gradient(
     to top,
     #5a0a00 0%,
-    #b32a00 14%,
-    #ff5a00 32%,
-    #ff9a1f 52%,
-    #ffd166 72%,
-    #fff4c2 90%,
-    #ffffff 100%
+    #c11d00 16%,
+    #ff3d00 36%,
+    #ff8a1a 58%,
+    #ffc94d 80%,
+    #fff0a0 100%
   );
-  background-size: 100% 220%;
+  background-size: 100% 150%;
+  background-position: 50% 35%;
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
