@@ -22,7 +22,7 @@ import type { Locale } from "@/i18n/config";
 interface RailItem {
   href: string;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
   exact?: boolean;
 }
 
