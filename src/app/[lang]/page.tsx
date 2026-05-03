@@ -246,16 +246,73 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
         />
 
         <div className="relative max-w-[1400px] mx-auto px-5 md:px-10 pt-12 md:pt-20 pb-10 md:pb-16">
-          {/* Massive display title — fills width like BPM */}
+          {/* Massive display title — POOL UP with 3D blinking up-arrow */}
           <h1
-            className="font-display font-bold leading-[0.86] tracking-[-0.05em] text-[#f1ece4] whitespace-nowrap"
+            className="font-display font-bold leading-[0.86] tracking-[-0.04em] text-[#f1ece4] whitespace-nowrap flex items-center gap-[0.12em]"
             style={{
-              fontSize: "clamp(56px, 11.5vw, 168px)",
+              fontSize: "clamp(72px, 14vw, 220px)",
               textShadow:
                 "0 4px 80px rgba(91, 140, 255, 0.25), 0 2px 30px rgba(255, 122, 0, 0.18)",
             }}
           >
-            <TextReveal text="Bugatti Sound" stagger={0.035} trigger="mount" />
+            <TextReveal text="POOL UP" stagger={0.05} trigger="mount" />
+            <span
+              aria-hidden
+              className="pool-up-arrow inline-flex shrink-0"
+              style={{ width: "0.85em", height: "0.85em" }}
+            >
+              <svg
+                viewBox="0 0 100 100"
+                width="100%"
+                height="100%"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <defs>
+                  <linearGradient
+                    id="poolUpFill"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop offset="0%" stopColor="#fff0a0" />
+                    <stop offset="35%" stopColor="#ffc94d" />
+                    <stop offset="65%" stopColor="#ff8a1a" />
+                    <stop offset="100%" stopColor="#c11d00" />
+                  </linearGradient>
+                  <linearGradient
+                    id="poolUpEdge"
+                    x1="0"
+                    y1="0"
+                    x2="1"
+                    y2="1"
+                  >
+                    <stop offset="0%" stopColor="#5a0a00" />
+                    <stop offset="100%" stopColor="#ff3d00" />
+                  </linearGradient>
+                </defs>
+                {/* Back layer for 3D extrude */}
+                <polygon
+                  points="50,10 90,55 70,55 70,90 30,90 30,55 10,55"
+                  fill="url(#poolUpEdge)"
+                  transform="translate(6 6)"
+                  opacity="0.55"
+                />
+                {/* Front layer */}
+                <polygon
+                  points="50,10 90,55 70,55 70,90 30,90 30,55 10,55"
+                  fill="url(#poolUpFill)"
+                  stroke="#ffd87a"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                />
+                {/* Top highlight */}
+                <polygon
+                  points="50,14 86,54 72,54 72,46 28,46 28,54 14,54"
+                  fill="rgba(255,255,255,0.32)"
+                />
+              </svg>
+            </span>
           </h1>
 
           {/* 3-column caption row + CTA on the right */}
