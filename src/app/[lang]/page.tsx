@@ -248,14 +248,14 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
         <div className="relative max-w-[1400px] mx-auto px-5 md:px-10 pt-12 md:pt-20 pb-10 md:pb-16">
           {/* Massive display title — fills width like BPM */}
           <h1
-            className="font-display font-bold leading-[0.86] tracking-[-0.05em] lowercase text-[#f1ece4] whitespace-nowrap"
+            className="font-display font-bold leading-[0.86] tracking-[-0.05em] text-[#f1ece4] whitespace-nowrap"
             style={{
               fontSize: "clamp(56px, 11.5vw, 168px)",
               textShadow:
                 "0 4px 80px rgba(91, 140, 255, 0.25), 0 2px 30px rgba(255, 122, 0, 0.18)",
             }}
           >
-            <TextReveal text="bugatti sound" stagger={0.035} trigger="mount" />
+            <TextReveal text="Bugatti Sound" stagger={0.035} trigger="mount" />
           </h1>
 
           {/* 3-column caption row + CTA on the right */}
