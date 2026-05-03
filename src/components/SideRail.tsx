@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   Home,
   Music,
@@ -37,18 +37,35 @@ export function SideRail({
   isAdmin: boolean;
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const lp = `/${locale}`;
   const [expanded, setExpanded] = useState(false);
 
-  const main: RailItem[] = [
+  interface CatalogMatch {
+    sort?: string | null;
+    view?: string | null;
+  }
+
+  const main: (RailItem & { match?: CatalogMatch })[] = [
     { href: lp, label: dict.nav.home, icon: Home, exact: true },
-    { href: `${lp}/catalog`, label: dict.nav.catalog, icon: Music },
+    {
+      href: `${lp}/catalog`,
+      label: dict.nav.catalog,
+      icon: Music,
+      match: { sort: null, view: null },
+    },
     {
       href: `${lp}/catalog?sort=popular`,
       label: dict.nav.trending,
       icon: TrendingUp,
+      match: { sort: "popular" },
     },
-    { href: `${lp}/catalog?view=genres`, label: dict.nav.genres, icon: Grid3x3 },
+    {
+      href: `${lp}/catalog?view=genres`,
+      label: dict.nav.genres,
+      icon: Grid3x3,
+      match: { view: "genres" },
+    },
     { href: `${lp}/pricing`, label: dict.nav.pricing, icon: Crown },
   ];
 
@@ -67,10 +84,23 @@ export function SideRail({
     ? [{ href: `${lp}/admin`, label: dict.nav.admin, icon: Shield }]
     : [];
 
-  const isActive = (item: RailItem) => {
+  const isActive = (item: RailItem & { match?: CatalogMatch }) => {
     const cleanHref = item.href.split("?")[0];
     if (item.exact) return pathname === cleanHref;
-    return pathname === cleanHref || pathname.startsWith(`${cleanHref}/`);
+    const pathMatches =
+      pathname === cleanHref || pathname.startsWith(`${cleanHref}/`);
+    if (!pathMatches) return false;
+    if (!item.match) return true;
+    // Catalog variants share the same path; disambiguate by query params.
+    for (const [key, expected] of Object.entries(item.match)) {
+      const actual = searchParams.get(key);
+      if (expected === null) {
+        if (actual !== null) return false;
+      } else if (actual !== expected) {
+        return false;
+      }
+    }
+    return true;
   };
 
   return (
