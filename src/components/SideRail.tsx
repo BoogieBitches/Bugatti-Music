@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   Shield,
   LogIn,
+  ChevronRight,
 } from "lucide-react";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { Locale } from "@/i18n/config";
@@ -105,23 +106,35 @@ export function SideRail({
 
   return (
     <aside
-      className="fixed left-0 top-0 z-40 hidden md:flex flex-col h-screen transition-[width] duration-300 ease-out bg-[rgba(8,9,12,0.94)] backdrop-blur-xl border-r border-white/[0.06] overflow-hidden"
-      style={{ width: expanded ? 224 : 72 }}
-      onMouseEnter={() => setExpanded(true)}
-      onMouseLeave={() => setExpanded(false)}
+      className="fixed left-0 top-0 z-40 hidden md:flex flex-col h-screen transition-[width] duration-300 ease-out bg-[rgba(8,9,12,0.94)] backdrop-blur-xl border-r border-white/[0.06] overflow-visible"
+      style={{ width: expanded ? 224 : 56 }}
       aria-label="Primary navigation"
     >
+      {/* Toggle chevron — sits on the rail's right edge */}
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-label={expanded ? "Свернуть навигацию" : "Развернуть навигацию"}
+        aria-expanded={expanded}
+        className="absolute -right-3 top-[64px] z-10 flex items-center justify-center w-6 h-6 rounded-full bg-[rgba(20,22,28,0.96)] border border-white/10 text-white/70 hover:text-white hover:bg-[var(--accent)] hover:border-[var(--accent)] transition-colors shadow-[0_2px_10px_rgba(0,0,0,0.5)]"
+      >
+        <ChevronRight
+          className="w-4 h-4 transition-transform duration-300"
+          style={{ transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}
+        />
+      </button>
+
       {/* Brand */}
       <Link
         href={lp}
-        className="flex items-center gap-3 h-20 px-4 shrink-0 border-b border-white/[0.04]"
+        className="flex items-center gap-3 h-20 px-3 shrink-0 border-b border-white/[0.04] overflow-hidden"
       >
-        <span className="relative inline-block w-10 h-10 rounded-lg overflow-hidden ring-1 ring-white/10 shrink-0">
+        <span className="relative inline-block w-9 h-9 rounded-lg overflow-hidden ring-1 ring-white/10 shrink-0">
           <Image
             src="/bugatti-logo.png"
             alt="Bugatti Sound"
             fill
-            sizes="40px"
+            sizes="36px"
             className="object-contain"
             priority
           />
@@ -136,7 +149,7 @@ export function SideRail({
       </Link>
 
       {/* Main nav */}
-      <nav className="flex-1 px-3 py-4 flex flex-col gap-1 overflow-y-auto overflow-x-hidden">
+      <nav className="flex-1 px-2 py-4 flex flex-col gap-1 overflow-y-auto overflow-x-hidden">
         {main.map((item) => (
           <RailLink
             key={item.href}
@@ -199,7 +212,7 @@ function RailLink({
     <Link
       href={item.href}
       title={expanded ? undefined : item.label}
-      className={`relative flex items-center gap-3 h-11 rounded-lg pl-[14px] pr-3 text-[14px] font-semibold transition-colors ${
+      className={`relative flex items-center gap-3 h-10 rounded-lg pl-[12px] pr-2 text-[14px] font-semibold transition-colors ${
         active
           ? "text-white bg-white/[0.06]"
           : "text-white/55 hover:text-white hover:bg-white/[0.04]"
@@ -208,7 +221,7 @@ function RailLink({
       {active && (
         <span
           aria-hidden
-          className="absolute -left-[10px] top-2 bottom-2 w-[3px] rounded-r-full"
+          className="absolute -left-[8px] top-2 bottom-2 w-[3px] rounded-r-full"
           style={{
             background:
               "linear-gradient(180deg, var(--accent), var(--accent-2))",

@@ -82,7 +82,7 @@ export default async function LangLayout({
         <CursorSpotlight />
         <I18nProvider locale={lang} dict={dict}>
           <SideRailServer locale={lang} />
-          <div className="relative min-h-screen flex flex-col md:pl-[72px]">
+          <div className="relative min-h-screen flex flex-col md:pl-[56px]">
             <Header locale={lang} />
             <main className="flex-1">{children}</main>
             <Footer locale={lang} />
