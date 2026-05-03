@@ -7,6 +7,7 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { AuroraBackground } from "@/components/AuroraBackground";
 import { CursorSpotlight } from "@/components/CursorSpotlight";
+import { SideRailServer } from "@/components/SideRailServer";
 import "../globals.css";
 
 export const dynamic = "force-dynamic";
@@ -80,7 +81,8 @@ export default async function LangLayout({
         <AuroraBackground />
         <CursorSpotlight />
         <I18nProvider locale={lang} dict={dict}>
-          <div className="relative min-h-screen flex flex-col">
+          <SideRailServer locale={lang} />
+          <div className="relative min-h-screen flex flex-col md:pl-[72px]">
             <Header locale={lang} />
             <main className="flex-1">{children}</main>
             <Footer locale={lang} />

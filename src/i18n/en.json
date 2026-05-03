@@ -4,7 +4,10 @@
     "tagline": "The music pool for serious DJs"
   },
   "nav": {
+    "home": "Home",
     "catalog": "Catalog",
+    "trending": "Trending",
+    "genres": "Genres",
     "pricing": "Pricing",
     "upload": "Upload",
     "dashboard": "Dashboard",
