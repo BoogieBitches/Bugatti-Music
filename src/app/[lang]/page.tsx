@@ -241,71 +241,22 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
         <div aria-hidden className="hero-violet-halo" />
 
         <div className="relative max-w-[1400px] mx-auto px-5 md:px-10 pt-12 md:pt-20 pb-10 md:pb-16">
-          {/* Massive display title — pool up with 3D animated up-arrow */}
+          {/* Eyebrow — small editorial label */}
+          <div className="hero-eyebrow">
+            <span aria-hidden className="hero-eyebrow-dot" />
+            <span>BUGATTI SOUND · DJ POOL · EST. 2026</span>
+          </div>
+
+          {/* Massive display title — chrome shimmer "pool up" */}
           <h1
-            className="font-display font-bold leading-[0.86] tracking-[-0.04em] text-[#f1ece4] lowercase whitespace-nowrap flex items-center gap-[0.12em]"
-            style={{
-              fontSize: "clamp(72px, 14vw, 220px)",
-              textShadow:
-                "0 4px 80px rgba(150, 110, 255, 0.45), 0 2px 30px rgba(108, 76, 255, 0.35)",
-            }}
+            className="pool-up-title font-display font-bold leading-[0.84] tracking-[-0.06em] lowercase whitespace-nowrap"
+            style={{ fontSize: "clamp(72px, 15vw, 240px)" }}
           >
-            <TextReveal text="pool up" stagger={0.05} trigger="mount" />
-            <span
-              aria-hidden
-              className="pool-up-arrow inline-flex shrink-0"
-              style={{ width: "0.85em", height: "0.85em" }}
-            >
-              <svg
-                viewBox="0 0 100 100"
-                width="100%"
-                height="100%"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <defs>
-                  <linearGradient
-                    id="poolUpFill"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop offset="0%" stopColor="#e8defc" />
-                    <stop offset="30%" stopColor="#b89dff" />
-                    <stop offset="65%" stopColor="#7a55ff" />
-                    <stop offset="100%" stopColor="#3b1d9c" />
-                  </linearGradient>
-                  <linearGradient
-                    id="poolUpEdge"
-                    x1="0"
-                    y1="0"
-                    x2="1"
-                    y2="1"
-                  >
-                    <stop offset="0%" stopColor="#1a0e4d" />
-                    <stop offset="100%" stopColor="#6845e8" />
-                  </linearGradient>
-                </defs>
-                <polygon
-                  points="50,10 90,55 70,55 70,90 30,90 30,55 10,55"
-                  fill="url(#poolUpEdge)"
-                  transform="translate(6 6)"
-                  opacity="0.55"
-                />
-                <polygon
-                  points="50,10 90,55 70,55 70,90 30,90 30,55 10,55"
-                  fill="url(#poolUpFill)"
-                  stroke="#cdb8ff"
-                  strokeWidth="1.5"
-                  strokeLinejoin="round"
-                />
-                <polygon
-                  points="50,14 86,54 72,54 72,46 28,46 28,54 14,54"
-                  fill="rgba(255,255,255,0.36)"
-                />
-              </svg>
-            </span>
+            pool up
           </h1>
+
+          {/* Refined accent rule — a thin line that fades into the violet */}
+          <div aria-hidden className="hero-rule" />
 
           {/* 3-column caption row + CTA on the right */}
           <div className="mt-8 md:mt-12 grid md:grid-cols-12 gap-6 md:gap-8 items-end">
