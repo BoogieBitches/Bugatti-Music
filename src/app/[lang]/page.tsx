@@ -364,8 +364,8 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
             </h2>
             <p className="mt-6 text-[var(--muted)] text-base md:text-xl max-w-2xl">
               {lang === "ru"
-                ? "Скачивай треки. Используй где угодно. Без бредятины."
-                : "Download tracks. Use them anywhere. No bullshit."}
+                ? "Скачивай треки. Используй где угодно. Без воды."
+                : "Download tracks. Use them anywhere. No fluff."}
             </p>
           </div>
           <div className="md:col-span-4 flex md:justify-end">
