@@ -52,7 +52,10 @@ export function TrackCard({ track, previewUrl, imageUrl, videoUrl }: Props) {
       if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
       try {
         const supabase = createSupabaseBrowserClient();
-        supabase.rpc("increment_plays", { track_id: track.id });
+        supabase
+          .rpc("increment_plays", { track_id: track.id })
+          .then(() => {})
+          .catch(() => {});
       } catch {
         // ignore
       }
