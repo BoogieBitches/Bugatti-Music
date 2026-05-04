@@ -4,7 +4,7 @@ import { getDictionary } from "@/i18n/dictionaries";
 import { hasSupabaseEnv } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { CoverMedia } from "@/components/CoverMedia";
-import { AudioPlayer } from "@/components/AudioPlayer";
+import { TrackPagePlayer } from "@/components/player/TrackPagePlayer";
 import { DownloadButton } from "@/components/DownloadButton";
 import type { TrackWithGenre } from "@/types/db";
 import { formatDuration } from "@/lib/utils";
@@ -86,7 +86,20 @@ export default async function TrackPage({ params }: PageProps<"/[lang]/track/[id
 
         {previewUrl && (
           <div className="mt-6 bs-card p-4">
-            <AudioPlayer src={previewUrl} isPreview />
+            <TrackPagePlayer
+              locale={lang}
+              track={{
+                id: track.id,
+                title: track.title,
+                artist: track.artist,
+                coverUrl: imageUrl,
+                videoUrl,
+                src: previewUrl,
+                href: `/${lang}/track/${track.id}`,
+                isPreview: true,
+                genre: genreName,
+              }}
+            />
           </div>
         )}
 
