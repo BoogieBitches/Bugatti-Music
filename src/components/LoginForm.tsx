@@ -109,6 +109,16 @@ export function LoginForm({ locale, next, dict, mode }: Props) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+        {mode === "login" && (
+          <div className="-mt-1 flex justify-end">
+            <Link
+              href={`${lp}/forgot-password`}
+              className="text-xs text-[var(--muted)] hover:text-white underline underline-offset-2"
+            >
+              {dict.auth.forgotPassword}
+            </Link>
+          </div>
+        )}
         <button
           type="submit"
           disabled={loading}
