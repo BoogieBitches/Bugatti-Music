@@ -8,6 +8,8 @@ import { Footer } from "@/components/Footer";
 import { AuroraBackground } from "@/components/AuroraBackground";
 import { CursorSpotlight } from "@/components/CursorSpotlight";
 import { SideRailServer } from "@/components/SideRailServer";
+import { PlayerProvider } from "@/components/player/PlayerStore";
+import { PlayerBar } from "@/components/player/PlayerBar";
 import "../globals.css";
 
 export const dynamic = "force-dynamic";
@@ -81,12 +83,15 @@ export default async function LangLayout({
         <AuroraBackground />
         <CursorSpotlight />
         <I18nProvider locale={lang} dict={dict}>
-          <SideRailServer locale={lang} />
-          <div className="relative min-h-screen flex flex-col md:pl-[56px]">
-            <Header locale={lang} />
-            <main className="flex-1">{children}</main>
-            <Footer locale={lang} />
-          </div>
+          <PlayerProvider>
+            <SideRailServer locale={lang} />
+            <div className="relative min-h-screen flex flex-col md:pl-[56px]">
+              <Header locale={lang} />
+              <main className="flex-1">{children}</main>
+              <Footer locale={lang} />
+            </div>
+            <PlayerBar />
+          </PlayerProvider>
         </I18nProvider>
       </body>
     </html>

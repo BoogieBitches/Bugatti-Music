@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { useRef } from "react";
+import { useEffect } from "react";
 import { useI18n } from "@/i18n/I18nProvider";
 import type { TrackWithGenre } from "@/types/db";
 import { CoverMedia } from "./CoverMedia";
-import { AudioPlayer } from "./AudioPlayer";
+import { PlayButton } from "./player/PlayButton";
+import { usePlayer } from "./player/PlayerStore";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 interface Props {
@@ -43,15 +45,19 @@ export function TrackCard({ track, previewUrl, imageUrl, videoUrl }: Props) {
     mvY.set(0);
   }
 
-  async function handleFirstPlay() {
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
-    try {
-      const supabase = createSupabaseBrowserClient();
-      await supabase.rpc("increment_plays", { track_id: track.id });
-    } catch {
-      // ignore
-    }
-  }
+  const { registerFirstPlayCallback } = usePlayer();
+  useEffect(() => {
+    return registerFirstPlayCallback((id) => {
+      if (id !== track.id) return;
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+      try {
+        const supabase = createSupabaseBrowserClient();
+        supabase.rpc("increment_plays", { track_id: track.id });
+      } catch {
+        // ignore
+      }
+    });
+  }, [registerFirstPlayCallback, track.id]);
 
   return (
     <motion.article
@@ -90,7 +96,24 @@ export function TrackCard({ track, previewUrl, imageUrl, videoUrl }: Props) {
         </div>
       </div>
       {previewUrl && (
-        <AudioPlayer src={previewUrl} isPreview onFirstPlay={handleFirstPlay} />
+        <div className="flex items-center gap-3">
+          <PlayButton
+            track={{
+              id: track.id,
+              title: track.title,
+              artist: track.artist,
+              coverUrl: imageUrl,
+              videoUrl,
+              src: previewUrl,
+              href: `/${locale}/track/${track.id}`,
+              isPreview: true,
+              genre,
+            }}
+          />
+          <span className="text-[11px] uppercase tracking-[0.18em] text-[var(--muted)]">
+            {locale === "ru" ? "30 сек превью" : "30 sec preview"}
+          </span>
+        </div>
       )}
     </motion.article>
   );
