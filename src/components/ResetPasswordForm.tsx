@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Dictionary } from "@/i18n/dictionaries";
@@ -12,22 +12,22 @@ interface Props {
   dict: Dictionary;
 }
 
+/**
+ * Show the form immediately and let Supabase tell us on submit whether the
+ * recovery session is valid. Previously we blocked the UI on
+ * `supabase.auth.getSession()` which sometimes hangs indefinitely on the
+ * first render after the auth callback, leaving users stuck on a
+ * "Loading…" screen with no way to enter a new password.
+ */
 export function ResetPasswordForm({ locale, dict }: Props) {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [expired, setExpired] = useState(false);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
-  const [hasSession, setHasSession] = useState<boolean | null>(null);
   const lp = `/${locale}`;
-
-  useEffect(() => {
-    const supabase = createSupabaseBrowserClient();
-    supabase.auth.getSession().then(({ data }) => {
-      setHasSession(!!data.session);
-    });
-  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -44,7 +44,19 @@ export function ResetPasswordForm({ locale, dict }: Props) {
     try {
       const supabase = createSupabaseBrowserClient();
       const { error } = await supabase.auth.updateUser({ password });
-      if (error) throw error;
+      if (error) {
+        const msg = error.message.toLowerCase();
+        if (
+          msg.includes("session") ||
+          msg.includes("jwt") ||
+          msg.includes("token") ||
+          msg.includes("auth")
+        ) {
+          setExpired(true);
+          return;
+        }
+        throw error;
+      }
       setDone(true);
       setTimeout(() => {
         router.push(`${lp}/dashboard`);
@@ -57,7 +69,7 @@ export function ResetPasswordForm({ locale, dict }: Props) {
     }
   }
 
-  if (hasSession === false) {
+  if (expired) {
     return (
       <div className="bs-card p-6 space-y-4">
         <div className="text-sm text-red-300 border border-red-900/50 bg-red-900/20 rounded-lg px-3 py-2">
@@ -69,14 +81,6 @@ export function ResetPasswordForm({ locale, dict }: Props) {
         >
           {dict.auth.resetRequestAgain}
         </Link>
-      </div>
-    );
-  }
-
-  if (hasSession === null) {
-    return (
-      <div className="bs-card p-6 text-sm text-[var(--muted)]">
-        {dict.common.loading}
       </div>
     );
   }
