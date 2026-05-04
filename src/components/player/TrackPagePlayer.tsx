@@ -21,8 +21,10 @@ export function TrackPagePlayer({ track, locale }: Props) {
         const supabase = createSupabaseBrowserClient();
         supabase
           .rpc("increment_plays", { track_id: track.id })
-          .then(() => {})
-          .catch(() => {});
+          .then(
+            () => {},
+            () => {},
+          );
       } catch {
         // ignore
       }
