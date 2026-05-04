@@ -489,73 +489,115 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
         </div>
       </section>
 
-      {/* SECTION 05 — GENRES */}
-      {genres.length > 0 && (
-        <section className="relative max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28 border-t border-[var(--border)]">
-          <header className="grid md:grid-cols-12 gap-6 md:gap-10 items-end mb-12 md:mb-16">
-            <div className="md:col-span-1 font-display text-5xl md:text-6xl font-bold tabular-nums tracking-tighter text-white/90">
-              05
-            </div>
-            <div className="md:col-span-7">
-              <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-3">
-                {genres.length}+ {lang === "ru" ? "стилей" : "Styles"}
+      {/* SECTION 05 — GENRES (curated) */}
+      {(() => {
+        const curated: {
+          slug: string;
+          label: string;
+          bpm: string;
+          from: string;
+          to: string;
+        }[] = [
+          { slug: "house",      label: "House",           bpm: "120–128",  from: "#ffb800", to: "#ff5a00" },
+          { slug: "club-house", label: "Club House",      bpm: "124–128",  from: "#ff3d9a", to: "#7a1fad" },
+          { slug: "bass-house", label: "Bass House",      bpm: "126–132",  from: "#00d4ff", to: "#1e40ff" },
+          { slug: "tech-house", label: "Tech House",      bpm: "122–126",  from: "#00e5a8", to: "#00867d" },
+          { slug: "garage",     label: "Garage",          bpm: "130–135",  from: "#cfd9e4", to: "#4a5b6a" },
+          { slug: "baile-funk", label: "Baile Funk",      bpm: "130",      from: "#c7ff3d", to: "#ff3d9a" },
+          { slug: "pop-dance",  label: "Pop-Dance",       bpm: "118–126",  from: "#ff8a2a", to: "#ff4fa3" },
+          { slug: "drum-bass",  label: "D'n'B",           bpm: "170–176",  from: "#ff2e4d", to: "#8b0014" },
+          { slug: "hip-hop",    label: "Rap & Hip-Hop",   bpm: "80–105",   from: "#f9d26e", to: "#8a5a1b" },
+          { slug: "techno",     label: "Techno",          bpm: "128–140",  from: "#9b7aff", to: "#3b1d9c" },
+        ];
+        return (
+          <section className="relative max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28 border-t border-[var(--border)]">
+            <header className="grid md:grid-cols-12 gap-6 md:gap-10 items-end mb-12 md:mb-16">
+              <div className="md:col-span-1 font-display text-5xl md:text-6xl font-bold tabular-nums tracking-tighter text-white/90">
+                05
               </div>
-              <h2 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold tracking-tighter leading-[0.95] text-white">
-                <TextReveal
-                  text={lang === "ru" ? "Genres" : "Genres"}
-                  stagger={0.04}
-                  trigger="mount"
-                />
-              </h2>
-            </div>
-            <div className="md:col-span-4 flex md:justify-end">
-              <Link
-                href={`${lp}/catalog`}
-                className="group inline-flex items-center gap-2 font-display text-sm font-semibold tracking-[0.18em] uppercase"
-              >
-                <span>{lang === "ru" ? "Весь каталог" : "View all"}</span>
-                <span
-                  aria-hidden
-                  className="inline-block transition-transform group-hover:translate-x-1"
+              <div className="md:col-span-7">
+                <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-3">
+                  {curated.length} {lang === "ru" ? "стилей" : "Styles"}
+                </div>
+                <h2 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold tracking-tighter leading-[0.95] text-white">
+                  <TextReveal text="Genres" stagger={0.04} trigger="mount" />
+                </h2>
+              </div>
+              <div className="md:col-span-4 flex md:justify-end">
+                <Link
+                  href={`${lp}/catalog`}
+                  className="group inline-flex items-center gap-2 font-display text-sm font-semibold tracking-[0.18em] uppercase"
                 >
-                  →
-                </span>
-              </Link>
-            </div>
-          </header>
+                  <span>{lang === "ru" ? "Весь каталог" : "View all"}</span>
+                  <span
+                    aria-hidden
+                    className="inline-block transition-transform group-hover:translate-x-1"
+                  >
+                    →
+                  </span>
+                </Link>
+              </div>
+            </header>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
-            {genres.slice(0, 20).map((g) => (
-              <Link
-                key={g.id}
-                href={`${lp}/catalog?genre=${g.slug}`}
-                className="group relative aspect-[5/4] rounded-2xl overflow-hidden border border-[var(--border)] bg-gradient-to-br from-white/5 to-transparent flex items-end p-4 hover:border-white/30 transition-colors"
-              >
-                <div
-                  aria-hidden
-                  className="absolute inset-0 opacity-40 group-hover:opacity-60 transition-opacity"
-                  style={{
-                    background: `radial-gradient(120% 80% at 50% 100%, ${
-                      [
-                        "#5b8cff",
-                        "#ff7a00",
-                        "#7b49ff",
-                        "#22c55e",
-                        "#ff3d6b",
-                        "#00d4ff",
-                        "#ffd000",
-                      ][g.position % 7]
-                    }, transparent 70%)`,
-                  }}
-                />
-                <span className="relative font-display text-lg md:text-xl font-bold tracking-tight text-white">
-                  {lang === "ru" ? g.name_ru : g.name_en}
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
+              {curated.map((g, i) => (
+                <Link
+                  key={g.slug}
+                  href={`${lp}/catalog?genre=${g.slug}`}
+                  className="genre-card group"
+                  style={
+                    {
+                      "--gc-from": g.from,
+                      "--gc-to": g.to,
+                    } as React.CSSProperties
+                  }
+                >
+                  {/* layered gradients */}
+                  <span aria-hidden className="genre-card-base" />
+                  <span aria-hidden className="genre-card-glow" />
+                  <span aria-hidden className="genre-card-ring" />
+                  <span aria-hidden className="genre-card-sheen" />
+
+                  {/* top row: counter + BPM */}
+                  <div className="relative flex items-start justify-between">
+                    <span className="font-display text-[11px] font-semibold tabular-nums tracking-[0.18em] text-white/65">
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <span className="font-display text-[10px] font-semibold tracking-[0.14em] uppercase text-white/55 px-2 py-[3px] rounded-full border border-white/15 bg-white/[0.04] backdrop-blur-sm">
+                      {g.bpm} BPM
+                    </span>
+                  </div>
+
+                  {/* bottom: label + arrow */}
+                  <div className="relative flex items-end justify-between gap-3 mt-auto">
+                    <span className="font-display text-[22px] md:text-[26px] font-bold tracking-[-0.02em] leading-[1.02] text-white">
+                      {g.label}
+                    </span>
+                    <span
+                      aria-hidden
+                      className="shrink-0 inline-flex w-8 h-8 rounded-full items-center justify-center bg-white/10 border border-white/15 text-white opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="14"
+                        height="14"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M5 12h14" />
+                        <path d="M13 6l6 6-6 6" />
+                      </svg>
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        );
+      })()}
 
       {/* SECTION 06 — NEW RELEASES GRID */}
       {newTracks.length > 0 && (
