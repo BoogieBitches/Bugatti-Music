@@ -67,15 +67,17 @@ export function UploadForm({ locale, dict, genres, userId }: Props) {
         setProgress("Generating preview…");
         const previewFile = await buildPreviewFromAudioFile(audioFile, 30);
         setProgress("Uploading preview…");
-        previewPath = `${folder}/${safeFileName(previewFile.name)}`;
+        const candidatePath = `${folder}/${safeFileName(previewFile.name)}`;
         const { error } = await supabase.storage
           .from("audio-previews")
-          .upload(previewPath, previewFile, { upsert: false });
+          .upload(candidatePath, previewFile, { upsert: false });
         if (error) throw error;
+        previewPath = candidatePath;
       } catch (previewErr) {
         // Non-fatal: if the browser can't decode the audio (e.g. exotic
-        // codec), we still publish the track — admin/moderator can
-        // regenerate later. Keep previewPath = null.
+        // codec) or the upload fails, we still publish the track — admin
+        // or moderator can regenerate later.
+        previewPath = null;
         console.warn("Auto preview failed:", previewErr);
       }
 
