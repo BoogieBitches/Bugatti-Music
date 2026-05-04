@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { buildPreviewFromAudioFile } from "@/lib/audioPreview";
 import type { Genre } from "@/types/db";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { Locale } from "@/i18n/config";
@@ -28,7 +29,6 @@ export function UploadForm({ locale, dict, genres, userId }: Props) {
   const [musicKey, setMusicKey] = useState("");
   const [description, setDescription] = useState("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [previewFile, setPreviewFile] = useState<File | null>(null);
   const [coverImage, setCoverImage] = useState<File | null>(null);
   const [coverVideo, setCoverVideo] = useState<File | null>(null);
   const [premiumOnly, setPremiumOnly] = useState(false);
@@ -63,13 +63,22 @@ export function UploadForm({ locale, dict, genres, userId }: Props) {
       }
 
       let previewPath: string | null = null;
-      if (previewFile) {
+      try {
+        setProgress("Generating preview…");
+        const previewFile = await buildPreviewFromAudioFile(audioFile, 30);
         setProgress("Uploading preview…");
-        previewPath = `${folder}/${safeFileName(previewFile.name)}`;
+        const candidatePath = `${folder}/${safeFileName(previewFile.name)}`;
         const { error } = await supabase.storage
           .from("audio-previews")
-          .upload(previewPath, previewFile, { upsert: false });
+          .upload(candidatePath, previewFile, { upsert: false });
         if (error) throw error;
+        previewPath = candidatePath;
+      } catch (previewErr) {
+        // Non-fatal: if the browser can't decode the audio (e.g. exotic
+        // codec) or the upload fails, we still publish the track — admin
+        // or moderator can regenerate later.
+        previewPath = null;
+        console.warn("Auto preview failed:", previewErr);
       }
 
       let coverImagePath: string | null = null;
@@ -198,14 +207,11 @@ export function UploadForm({ locale, dict, genres, userId }: Props) {
           onChange={(e) => setAudioFile(e.target.files?.[0] ?? null)}
           className="bs-input file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-white/10"
         />
-      </Field>
-      <Field label={dict.upload.previewFile}>
-        <input
-          type="file"
-          accept="audio/*"
-          onChange={(e) => setPreviewFile(e.target.files?.[0] ?? null)}
-          className="bs-input file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-white/10"
-        />
+        <p className="mt-1 text-xs text-[var(--muted)]">
+          {locale === "ru"
+            ? "30-секундное превью будет создано автоматически при загрузке."
+            : "A 30-second preview is generated automatically on upload."}
+        </p>
       </Field>
       <Field label={dict.upload.coverImage}>
         <input
