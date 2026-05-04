@@ -25,7 +25,7 @@ export function ForgotPasswordForm({ locale, dict }: Props) {
     setLoading(true);
     try {
       const supabase = createSupabaseBrowserClient();
-      const redirectTo = `${window.location.origin}/${locale}/auth/callback?next=${encodeURIComponent(`/${locale}/reset-password`)}`;
+      const redirectTo = `${window.location.origin}/${locale}/auth/reset-callback`;
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
         redirectTo,
       });
