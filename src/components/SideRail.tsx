@@ -56,16 +56,14 @@ export function SideRail({
       match: { sort: null, view: null },
     },
     {
-      href: `${lp}/catalog?sort=popular`,
+      href: `${lp}#trending`,
       label: dict.nav.trending,
       icon: TrendingUp,
-      match: { sort: "popular" },
     },
     {
-      href: `${lp}/catalog?view=genres`,
+      href: `${lp}#genres`,
       label: dict.nav.genres,
       icon: Grid3x3,
-      match: { view: "genres" },
     },
     { href: `${lp}/pricing`, label: dict.nav.pricing, icon: Crown },
   ];
@@ -86,6 +84,9 @@ export function SideRail({
     : [];
 
   const isActive = (item: RailItem & { match?: CatalogMatch }) => {
+    // Anchor-only links (e.g. "/ru#trending") are never shown as the active
+    // section — they're scroll shortcuts, not standalone routes.
+    if (item.href.includes("#")) return false;
     const cleanHref = item.href.split("?")[0];
     if (item.exact) return pathname === cleanHref;
     const pathMatches =

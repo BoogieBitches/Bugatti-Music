@@ -302,7 +302,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
 
       {/* SECTION 01 — TRENDING / 3D COVERFLOW */}
       {coverflowTracks.length >= 1 && (
-        <section className="relative max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28">
+        <section id="trending" className="relative max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28 scroll-mt-24">
           <header className="grid md:grid-cols-12 gap-6 md:gap-10 items-end mb-12 md:mb-16">
             <div className="md:col-span-1 font-display text-5xl md:text-6xl font-bold tabular-nums tracking-tighter text-white/90">
               01
@@ -506,7 +506,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
           { slug: "techno",     label: "Techno",          bpm: "128–140",  from: "#9b7aff", to: "#3b1d9c" },
         ];
         return (
-          <section className="relative max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28 border-t border-[var(--border)]">
+          <section id="genres" className="relative max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28 border-t border-[var(--border)] scroll-mt-24">
             <header className="grid md:grid-cols-12 gap-6 md:gap-10 items-end mb-12 md:mb-16">
               <div className="md:col-span-1 font-display text-5xl md:text-6xl font-bold tabular-nums tracking-tighter text-white/90">
                 05
