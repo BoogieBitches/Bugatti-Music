@@ -688,11 +688,14 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
             {lang === "ru" ? "Присоединяйся" : "Join the pool"}
           </div>
           <h2
-            className="font-display font-bold leading-[0.86] tracking-[-0.04em] lowercase text-[#f1ece4]"
+            className="font-display font-bold leading-[0.86] tracking-[-0.04em] lowercase text-[#f1ece4] [word-spacing:0.01em]"
             style={{
               fontSize: "clamp(54px, 11vw, 180px)",
               textShadow:
                 "0 4px 80px rgba(91, 140, 255, 0.3), 0 2px 30px rgba(255, 122, 0, 0.22)",
+              overflowWrap: "normal",
+              wordBreak: "keep-all",
+              hyphens: "none",
             }}
           >
             <TextReveal
@@ -701,8 +704,10 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                   ? "твой следующий сет начинается здесь."
                   : "your next set starts here."
               }
-              stagger={0.03}
+              stagger={0.08}
               trigger="mount"
+              mode="word"
+              allowWrap
             />
           </h2>
           <div className="mt-10 flex flex-wrap items-center gap-4">

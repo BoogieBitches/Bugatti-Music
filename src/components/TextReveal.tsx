@@ -20,6 +20,12 @@ interface Props {
    * below-the-fold section titles).
    */
   trigger?: "mount" | "scroll";
+  /**
+   * When true, the outer wrapper uses `display: inline` instead of
+   * `inline-block`, allowing the text to wrap across multiple lines between
+   * segments. Only meaningful together with `mode="word"`.
+   */
+  allowWrap?: boolean;
 }
 
 /**
@@ -35,6 +41,7 @@ export function TextReveal({
   mode = "char",
   preserveSpaces = true,
   trigger = "mount",
+  allowWrap = false,
 }: Props) {
   const reduce = useReducedMotion();
   const segments = mode === "char" ? Array.from(text) : text.split(/(\s+)/);
@@ -48,17 +55,31 @@ export function TextReveal({
 
   return (
     <span
-      className={`relative inline-block align-baseline ${className}`}
+      className={`relative ${allowWrap ? "inline" : "inline-block"} align-baseline ${className}`}
       aria-label={text}
     >
       {segments.map((seg, i) => {
         const isSpace = /^\s+$/.test(seg);
-        if (isSpace && preserveSpaces) {
-          return (
-            <span key={i} aria-hidden className="inline-block">
-              {"\u00A0"}
-            </span>
-          );
+        if (isSpace) {
+          // In word mode, render a real breakable whitespace between words
+          // so lines can wrap naturally (each word is still an inline-block
+          // that can't be split mid-letter). In char mode, keep the old
+          // behaviour: render an NBSP so character spacing stays visually
+          // tight and doesn't collapse inside an editorial title.
+          if (mode === "word") {
+            return (
+              <span key={i} aria-hidden>
+                {" "}
+              </span>
+            );
+          }
+          if (preserveSpaces) {
+            return (
+              <span key={i} aria-hidden className="inline-block">
+                {"\u00A0"}
+              </span>
+            );
+          }
         }
         const motionProps =
           trigger === "mount"
