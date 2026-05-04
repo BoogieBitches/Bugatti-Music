@@ -177,7 +177,6 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
             features: [
               "Всё из Premium",
               "Эксклюзивные дропы",
-              "Скидки на оборудование",
               "Прямая связь с продюсерами",
             ],
             cta: "Уведомить",
@@ -221,7 +220,6 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
             features: [
               "Everything in Premium",
               "Exclusive drops",
-              "Hardware discounts",
               "Direct producer DMs",
             ],
             cta: "Notify me",
