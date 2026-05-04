@@ -1,6 +1,6 @@
 # Bugatti Sound
 
-A modern music pool (DJ-City / ZipDJ / BPM Supreme style) built with Next.js 16, Supabase, and Stripe. Free to listen, premium to download.
+A modern music pool (DJ-City / ZipDJ / BPM Supreme style) built with Next.js 16, Supabase, and Stripe. Free to listen, premium to download. Built for top DJs.
 
 ## Stack
 
