@@ -70,18 +70,16 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
         : [...newTracks, ...topTracks];
 
   const marqueeItems = [
-    "HIP-HOP",
-    "AFRO HOUSE",
-    "TECH HOUSE",
-    "REGGAETON",
-    "DRILL",
-    "AMAPIANO",
-    "PHONK",
-    "TRAP",
+    "HOUSE",
+    "CLUB HOUSE",
     "BASS HOUSE",
-    "R&B",
-    "EDM",
-    "LATIN",
+    "TECH HOUSE",
+    "GARAGE",
+    "BAILE FUNK",
+    "POP-DANCE",
+    "D'N'B",
+    "RAP & HIP-HOP",
+    "TECHNO",
   ];
 
   const benefits =
@@ -90,7 +88,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
           {
             kicker: "Каталог",
             title: "Тысячи треков от лучших продюсеров",
-            body: "Hip-Hop, House, EDM, Reggaeton, Phonk и не только — каждый трек проходит модерацию.",
+            body: "House, Club House, Bass House, Tech House, Garage, Baile Funk, Pop-Dance, D'n'B, Rap & Hip-Hop, Techno — каждый трек проходит модерацию.",
           },
           {
             kicker: "Скачивание",
@@ -117,7 +115,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
           {
             kicker: "Catalog",
             title: "Thousands of tracks from top producers",
-            body: "Hip-Hop, House, EDM, Reggaeton, Phonk and beyond — every release moderated.",
+            body: "House, Club House, Bass House, Tech House, Garage, Baile Funk, Pop-Dance, D'n'B, Rap & Hip-Hop, Techno — every release moderated.",
           },
           {
             kicker: "Downloads",
@@ -366,8 +364,8 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
             </h2>
             <p className="mt-6 text-[var(--muted)] text-base md:text-xl max-w-2xl">
               {lang === "ru"
-                ? "Скачивай треки. Используй где угодно. Без бредятины."
-                : "Download tracks. Use them anywhere. No bullshit."}
+                ? "Скачивай треки. Используй где угодно. Без воды."
+                : "Download tracks. Use them anywhere. No fluff."}
             </p>
           </div>
           <div className="md:col-span-4 flex md:justify-end">
