@@ -37,9 +37,7 @@ export function ResetPasswordForm({ locale, dict }: Props) {
       return;
     }
     if (password !== confirm) {
-      setError(
-        locale === "ru" ? "Пароли не совпадают." : "Passwords do not match.",
-      );
+      setError(dict.auth.passwordsMismatch);
       return;
     }
     setLoading(true);
@@ -111,7 +109,7 @@ export function ResetPasswordForm({ locale, dict }: Props) {
             required
             minLength={8}
             className="bs-input"
-            placeholder={dict.auth.resetNewPassword}
+            placeholder={dict.auth.resetConfirmPassword}
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
           />
