@@ -95,7 +95,11 @@ export default async function CatalogPage({
         </div>
       )}
 
-      {configured && tracks.length === 0 && (
+      {configured && tracks.length === 0 && (q || genreSlug || minBpm || maxBpm) && (
+        <div className="mt-10 bs-card p-6 text-[var(--muted)]">{dict.catalog.noResults}</div>
+      )}
+
+      {configured && tracks.length === 0 && !(q || genreSlug || minBpm || maxBpm) && (
         <section className="mt-12 relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#0e0e12] via-[#17121b] to-[#0e0e12] px-6 py-16 md:px-14 md:py-24">
           <div
             aria-hidden
