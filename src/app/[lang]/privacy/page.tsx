@@ -63,7 +63,7 @@ function PrivacyRu() {
     <>
       <H2>1. Кто обрабатывает ваши данные</H2>
       <p>
-        Оператор — проект Bugatti Sound (далее — «мы», «нас»). Связь: hello@bugatti-sound.com.
+        Оператор — проект Bugatti Sound (далее — «мы», «нас»). Связь: matrix198605@gmail.com.
       </p>
 
       <H2>2. Какие данные мы собираем</H2>
@@ -181,7 +181,7 @@ function PrivacyRu() {
 
       <H2>11. Контакты</H2>
       <p>
-        Вопросы по приватности: <a href="mailto:privacy@bugatti-sound.com" className="underline">privacy@bugatti-sound.com</a>.
+        Вопросы по приватности: <a href="mailto:matrix198605@gmail.com" className="underline">matrix198605@gmail.com</a>.
       </p>
     </>
   );
@@ -193,7 +193,7 @@ function PrivacyEn() {
       <H2>1. Who processes your data</H2>
       <p>
         Data controller: the Bugatti Sound project (&quot;we&quot;, &quot;us&quot;). Contact:
-        hello@bugatti-sound.com.
+        matrix198605@gmail.com.
       </p>
 
       <H2>2. What we collect</H2>
@@ -306,7 +306,7 @@ function PrivacyEn() {
 
       <H2>11. Contact</H2>
       <p>
-        Privacy questions: <a href="mailto:privacy@bugatti-sound.com" className="underline">privacy@bugatti-sound.com</a>.
+        Privacy questions: <a href="mailto:matrix198605@gmail.com" className="underline">matrix198605@gmail.com</a>.
       </p>
     </>
   );

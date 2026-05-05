@@ -114,7 +114,7 @@ function TermsRu({ lp }: { lp: string }) {
       </p>
       <p>
         Если вы обнаружили, что в Сервисе размещён ваш трек без разрешения — напишите нам на
-        abuse@bugatti-sound.com (или на временный адрес поддержки, указанный в профиле), и мы
+        matrix198605@gmail.com (или на временный адрес поддержки, указанный в профиле), и мы
         удалим его в течение 24 часов.
       </p>
 
@@ -156,7 +156,7 @@ function TermsRu({ lp }: { lp: string }) {
 
       <H2>10. Контакты</H2>
       <p>
-        Вопросы: <a href="mailto:hello@bugatti-sound.com" className="underline">hello@bugatti-sound.com</a>
+        Вопросы: <a href="mailto:matrix198605@gmail.com" className="underline">matrix198605@gmail.com</a>
         {" "}(или действующий адрес поддержки на странице <a href={`${lp}/`} className="underline">главной</a>).
         Юрисдикция: право Российской Федерации, если иное не предусмотрено императивными
         нормами применимого к пользователю права.
@@ -219,7 +219,7 @@ function TermsEn({ lp }: { lp: string }) {
       </p>
       <p>
         If you discover your track on the Service without permission, email
-        abuse@bugatti-sound.com (or the support address shown in your profile); we will remove
+        matrix198605@gmail.com (or the support address shown in your profile); we will remove
         it within 24 hours.
       </p>
 
@@ -259,7 +259,7 @@ function TermsEn({ lp }: { lp: string }) {
 
       <H2>10. Contact</H2>
       <p>
-        Questions: <a href="mailto:hello@bugatti-sound.com" className="underline">hello@bugatti-sound.com</a>
+        Questions: <a href="mailto:matrix198605@gmail.com" className="underline">matrix198605@gmail.com</a>
         {" "}(or the current support address listed on the <a href={`${lp}/`} className="underline">home page</a>).
         Governing law: the law of the Russian Federation, unless mandatory consumer-protection
         rules of your jurisdiction apply.
