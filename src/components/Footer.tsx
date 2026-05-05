@@ -9,7 +9,7 @@ export async function Footer({ locale }: { locale: Locale }) {
   const lp = `/${locale}`;
   return (
     <footer className="relative mt-24 border-t border-[var(--border)] backdrop-blur-sm">
-      <div className="max-w-7xl mx-auto px-4 py-12 grid gap-10 md:grid-cols-4">
+      <div className="max-w-7xl mx-auto px-4 py-12 grid gap-10 md:grid-cols-5">
         <div className="md:col-span-2">
           <div className="flex items-center gap-2.5">
             <span className="relative inline-block w-9 h-9 rounded-xl overflow-hidden ring-1 ring-white/10">
@@ -39,6 +39,15 @@ export async function Footer({ locale }: { locale: Locale }) {
             <li><Link href={`${lp}/login`} className="hover:text-white text-[var(--muted)]">{dict.nav.login}</Link></li>
             <li><Link href={`${lp}/signup`} className="hover:text-white text-[var(--muted)]">{dict.nav.signup}</Link></li>
             <li><Link href={`${lp}/upload`} className="hover:text-white text-[var(--muted)]">{dict.nav.upload}</Link></li>
+          </ul>
+        </div>
+        <div>
+          <div className="text-xs uppercase tracking-[0.18em] text-[var(--muted)] mb-3">
+            {dict.footer.legal}
+          </div>
+          <ul className="space-y-2 text-sm">
+            <li><Link href={`${lp}/terms`} className="hover:text-white text-[var(--muted)]">{dict.footer.terms}</Link></li>
+            <li><Link href={`${lp}/privacy`} className="hover:text-white text-[var(--muted)]">{dict.footer.privacy}</Link></li>
           </ul>
         </div>
       </div>

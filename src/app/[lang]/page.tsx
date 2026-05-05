@@ -13,7 +13,7 @@ import { Marquee } from "@/components/Marquee";
 export default async function HomePage({ params }: PageProps<"/[lang]">) {
   const { lang } = await params;
   if (!isLocale(lang)) notFound();
-  await getDictionary(lang);
+  const dict = await getDictionary(lang);
   const lp = `/${lang}`;
 
   let genres: Genre[] = [];
@@ -265,9 +265,13 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
             </div>
             <div className="md:col-span-3">
               <p className="font-display text-[15px] md:text-base font-semibold text-white leading-snug">
-                {lang === "ru"
-                  ? `${approvedCount > 0 ? approvedCount.toLocaleString() : "1000+"} треков от лучших продюсеров.`
-                  : `${approvedCount > 0 ? approvedCount.toLocaleString() : "1000+"} tracks from top producers worldwide.`}
+                {approvedCount >= 50
+                  ? lang === "ru"
+                    ? `${approvedCount.toLocaleString()} треков от лучших продюсеров.`
+                    : `${approvedCount.toLocaleString()} tracks from top producers worldwide.`
+                  : lang === "ru"
+                    ? "Первые релизы — будь одним из основателей."
+                    : "First releases in — be a founding artist."}
               </p>
             </div>
             <div className="md:col-span-3">
@@ -300,8 +304,51 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
         <Marquee items={marqueeItems} speed={45} />
       </section>
 
+      {/* EARLY PRODUCERS BANNER — shown when the catalog is still empty / tiny */}
+      {approvedCount < 3 && (
+        <section className="relative max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28">
+          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#0e0e12] via-[#17121b] to-[#0e0e12] px-6 py-16 md:px-16 md:py-24">
+            <div
+              aria-hidden
+              className="absolute inset-0 -z-[1]"
+              style={{
+                background:
+                  "radial-gradient(60% 60% at 15% 20%, rgba(255,122,0,0.18), transparent 70%), radial-gradient(55% 55% at 85% 85%, rgba(91,140,255,0.22), transparent 70%)",
+              }}
+            />
+            <div className="grid md:grid-cols-12 gap-8 items-center">
+              <div className="md:col-span-8">
+                <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-4">
+                  {dict.earlyProducers.eyebrow}
+                </div>
+                <h2 className="font-display text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight text-white leading-[0.98]">
+                  {dict.earlyProducers.title}
+                </h2>
+                <p className="mt-6 text-[var(--muted)] text-base md:text-lg max-w-2xl">
+                  {dict.earlyProducers.body}
+                </p>
+              </div>
+              <div className="md:col-span-4 flex flex-col gap-3 md:items-end">
+                <Link
+                  href={`${lp}/upload`}
+                  className="bs-button bs-button-primary text-base whitespace-nowrap"
+                >
+                  {dict.earlyProducers.cta} →
+                </Link>
+                <Link
+                  href={`${lp}/pricing`}
+                  className="text-sm text-[var(--muted)] hover:text-white underline underline-offset-4"
+                >
+                  {dict.earlyProducers.secondary}
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* SECTION 01 — TRENDING / 3D COVERFLOW */}
-      {coverflowTracks.length >= 1 && (
+      {coverflowTracks.length >= 3 && (
         <section id="trending" className="relative max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28 scroll-mt-24">
           <header className="grid md:grid-cols-12 gap-6 md:gap-10 items-end mb-12 md:mb-16">
             <div className="md:col-span-1 font-display text-5xl md:text-6xl font-bold tabular-nums tracking-tighter text-white/90">
