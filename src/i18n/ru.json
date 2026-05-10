@@ -67,6 +67,7 @@
     "submitLogin": "Войти",
     "submitSignup": "Создать аккаунт",
     "googleContinue": "Продолжить с Google",
+    "googleOnlyHint": "Вход только через Google — не нужно запоминать пароль. Другие способы входа добавим позже.",
     "or": "или",
     "haveAccount": "Уже есть аккаунт?",
     "noAccount": "Нет аккаунта?",
