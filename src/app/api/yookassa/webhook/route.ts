@@ -24,9 +24,15 @@ interface YooKassaEvent {
 
 const PREMIUM_PERIOD_DAYS = 30;
 
-function premiumUntilFromNow(): string {
+// Anchor premium_until to the payment's captured_at (or created_at as a
+// fallback) rather than Date.now(). This makes replays harmless: a second
+// invocation of payment.succeeded for the same payment id always recomputes
+// the same expiry instead of pushing it forward by another 30 days.
+function premiumUntilFromPayment(payment: { captured_at?: string; created_at?: string }): string {
+  const anchor = payment.captured_at ?? payment.created_at;
+  const base = anchor ? new Date(anchor).getTime() : Date.now();
   const ms = PREMIUM_PERIOD_DAYS * 24 * 60 * 60 * 1000;
-  return new Date(Date.now() + ms).toISOString();
+  return new Date(base + ms).toISOString();
 }
 
 export async function POST(request: NextRequest) {
@@ -70,6 +76,20 @@ export async function POST(request: NextRequest) {
         });
         return NextResponse.json({ received: true, orphan: true });
       }
+
+      // Idempotency: if we already recorded this payment id, do nothing.
+      // Combined with the captured_at anchor below, this blocks replay attacks
+      // where someone re-POSTs an old succeeded webhook to extend their
+      // subscription.
+      const { data: existing } = await admin
+        .from("profiles")
+        .select("yookassa_last_payment_id")
+        .eq("id", userId)
+        .maybeSingle();
+      if (existing?.yookassa_last_payment_id === payment.id) {
+        return NextResponse.json({ received: true, duplicate: true });
+      }
+
       const savedMethodId = payment.payment_method?.saved
         ? payment.payment_method.id
         : null;
@@ -78,7 +98,7 @@ export async function POST(request: NextRequest) {
         .from("profiles")
         .update({
           is_premium: true,
-          premium_until: premiumUntilFromNow(),
+          premium_until: premiumUntilFromPayment(payment),
           yookassa_last_payment_id: payment.id,
           ...(savedMethodId ? { yookassa_payment_method_id: savedMethodId } : {}),
         })
