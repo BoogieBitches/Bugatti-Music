@@ -13,6 +13,7 @@ export function ManageSubscriptionButton({ dict }: { dict: Dictionary }) {
           const res = await fetch("/api/yookassa/portal", { method: "POST" });
           const j = await res.json();
           if (j.url) window.location.href = j.url;
+          else alert(j.error ?? "Failed");
         } finally {
           setLoading(false);
         }
