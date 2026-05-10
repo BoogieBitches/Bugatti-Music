@@ -48,6 +48,7 @@ export async function Footer({ locale }: { locale: Locale }) {
           <ul className="space-y-2 text-sm">
             <li><Link href={`${lp}/terms`} className="hover:text-white text-[var(--muted)]">{dict.footer.terms}</Link></li>
             <li><Link href={`${lp}/privacy`} className="hover:text-white text-[var(--muted)]">{dict.footer.privacy}</Link></li>
+            <li><Link href={`${lp}/requisites`} className="hover:text-white text-[var(--muted)]">{dict.footer.requisites}</Link></li>
           </ul>
         </div>
       </div>

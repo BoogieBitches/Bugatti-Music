@@ -90,9 +90,10 @@ function TermsRu({ lp }: { lp: string }) {
 
       <H2>4. Подписка Premium</H2>
       <p>
-        Premium — платная подписка за $5 в месяц (или эквивалент в вашей валюте). Premium даёт
-        право скачивать полные версии одобренных треков без ограничений в течение срока подписки.
-        Оплата списывается автоматически каждый месяц через платёжную систему Stripe.
+        Premium — платная подписка за 499 ₽ в месяц. Premium даёт право скачивать
+        полные версии одобренных треков без ограничений в течение срока подписки. Оплата
+        списывается автоматически каждый месяц через платёжную систему ЮKassa (ООО НКО «ЮМани»,
+        Россия).
       </p>
       <p>
         Вы можете отменить подписку в любой момент в разделе «Кабинет». После отмены доступ к
@@ -196,9 +197,9 @@ function TermsEn({ lp }: { lp: string }) {
 
       <H2>4. Premium subscription</H2>
       <p>
-        Premium is a paid subscription at $5 per month (or the local-currency equivalent). Premium
-        grants unlimited downloads of approved full-length tracks during the subscription period.
-        Payments are processed automatically each month via Stripe.
+        Premium is a paid subscription at 499 ₽ per month. Premium grants unlimited downloads
+        of approved full-length tracks during the subscription period. Payments are processed
+        automatically each month via ЮKassa (YooMoney NBCO LLC, Russia).
       </p>
       <p>
         You may cancel anytime from your Dashboard. After cancellation, Premium access remains

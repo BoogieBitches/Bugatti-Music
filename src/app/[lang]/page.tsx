@@ -158,7 +158,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
           },
           {
             name: "Premium",
-            price: "$5",
+            price: "499 ₽",
             period: "/ месяц",
             features: [
               "Безлимитные скачивания",
@@ -201,7 +201,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
           },
           {
             name: "Premium",
-            price: "$5",
+            price: "499 ₽",
             period: "/ month",
             features: [
               "Unlimited full-quality downloads",
