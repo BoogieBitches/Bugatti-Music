@@ -141,6 +141,27 @@ export async function POST(request: NextRequest) {
       if (!userId) {
         return NextResponse.json({ received: true, orphan: true });
       }
+
+      // Only revoke if the refunded payment is the user's *current* active
+      // payment. If they have already renewed (a newer payment succeeded),
+      // a refund of an older charge must NOT touch their Premium status.
+      const { data: profile } = await admin
+        .from("profiles")
+        .select("yookassa_last_payment_id")
+        .eq("id", userId)
+        .maybeSingle();
+      if (profile?.yookassa_last_payment_id !== refund.payment_id) {
+        console.log(
+          "[yookassa-webhook] refund for non-active payment, leaving Premium alone",
+          {
+            userId,
+            refundedPaymentId: refund.payment_id,
+            activePaymentId: profile?.yookassa_last_payment_id ?? null,
+          },
+        );
+        return NextResponse.json({ received: true, stale_refund: true });
+      }
+
       const { error: updErr } = await admin
         .from("profiles")
         .update({ is_premium: false, premium_until: null })
