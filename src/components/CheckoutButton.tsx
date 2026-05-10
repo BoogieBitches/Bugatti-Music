@@ -10,10 +10,10 @@ interface Props {
   dict: Dictionary;
   isLoggedIn: boolean;
   isPremium: boolean;
-  stripeReady: boolean;
+  yookassaReady: boolean;
 }
 
-export function CheckoutButton({ locale, dict, isLoggedIn, isPremium, stripeReady }: Props) {
+export function CheckoutButton({ locale, dict, isLoggedIn, isPremium, yookassaReady }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,10 +31,10 @@ export function CheckoutButton({ locale, dict, isLoggedIn, isPremium, stripeRead
         onClick={async () => {
           setLoading(true);
           try {
-            const res = await fetch("/api/stripe/portal", { method: "POST" });
+            const res = await fetch("/api/yookassa/portal", { method: "POST" });
             const j = await res.json();
             if (j.url) window.location.href = j.url;
-            else setError(j.error ?? "Failed");
+            else alert(j.error ?? "Failed");
           } finally {
             setLoading(false);
           }
@@ -47,10 +47,10 @@ export function CheckoutButton({ locale, dict, isLoggedIn, isPremium, stripeRead
     );
   }
 
-  if (!stripeReady) {
+  if (!yookassaReady) {
     return (
       <div className="bs-button w-full opacity-60 pointer-events-none">
-        Stripe not configured
+        ЮKassa not configured
       </div>
     );
   }
@@ -59,7 +59,7 @@ export function CheckoutButton({ locale, dict, isLoggedIn, isPremium, stripeRead
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch("/api/stripe/checkout", {
+      const res = await fetch("/api/yookassa/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ locale }),

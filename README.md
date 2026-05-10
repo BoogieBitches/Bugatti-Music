@@ -1,12 +1,12 @@
 # Bugatti Sound
 
-A modern music pool (DJ-City / ZipDJ / BPM Supreme style) built with Next.js 16, Supabase, and Stripe. Free to listen, premium to download. Built for top DJs.
+A modern music pool (DJ-City / ZipDJ / BPM Supreme style) built with Next.js 16, Supabase, and ЮKassa. Free to listen, premium to download. Built for top DJs.
 
 ## Stack
 
 - **Next.js 16** (App Router) + TypeScript + Tailwind v4
 - **Supabase**: Postgres + Auth (email + Google OAuth) + Storage
-- **Stripe**: subscription billing for the Premium plan
+- **ЮKassa**: subscription billing for the Premium plan (RUB)
 - **i18n**: built-in dictionaries for `en` and `ru`, locale-prefixed routes (`/en/...`, `/ru/...`)
 - **Vercel**: free hosting target
 
@@ -18,7 +18,7 @@ A modern music pool (DJ-City / ZipDJ / BPM Supreme style) built with Next.js 16,
 - User uploads with admin moderation (`pending` → `approved` / `rejected`)
 - Admin moderation panel (auto-shows for users with `role = 'admin'`)
 - User dashboard with subscription status & track history
-- Stripe Checkout, Customer Portal, and webhook-driven entitlement
+- ЮKassa hosted payment page, autopay via saved payment method, webhook-driven Premium entitlement
 - Mobile-first responsive layout
 - Russian / English language switch (locale persisted in cookie + Supabase profile)
 
@@ -40,17 +40,15 @@ pnpm install
    - `003_seed_genres.sql` — initial genre list
 4. (Optional) **Authentication → Providers → Google**: paste the Client ID / Secret you create in Google Cloud Console for OAuth login.
 
-### 3. Create a Stripe account
+### 3. Set up ЮKassa
 
-1. Sign up at <https://stripe.com>. You can stay in **Test mode** while developing.
-2. **Developers → API keys**: copy your publishable and secret keys.
-3. **Products** → create a recurring product (e.g. "Bugatti Sound Premium" at $9.99/month). Copy the resulting **Price ID** (`price_...`).
-4. **Developers → Webhooks** → add an endpoint pointing at `https://YOUR-DOMAIN/api/stripe/webhook` and listen for:
-   - `checkout.session.completed`
-   - `customer.subscription.created`
-   - `customer.subscription.updated`
-   - `customer.subscription.deleted`
-   Copy the signing secret (`whsec_...`).
+1. Sign up at <https://yookassa.ru> (самозанятый / ИП / ООО).
+2. In ЛК ЮKassa create a **test shop** for development (separate `shopId` with a `test_*` secret key) — see <https://yookassa.ru/developers/payment-acceptance/testing-and-going-live/testing>.
+3. **Settings → Ключи API → "Выпустить секретный ключ"** for both the test and live shops. Copy the key the moment it is shown — ЮKassa only displays it once.
+4. **Settings → Уведомления (HTTP)** → add a notification URL pointing at `https://YOUR-DOMAIN/api/yookassa/webhook` and subscribe to:
+   - `payment.succeeded`
+   - `payment.canceled`
+   - `refund.succeeded`
 
 ### 4. Configure environment variables
 
@@ -88,7 +86,7 @@ Open <http://localhost:3000>. You'll be redirected to `/en` (or `/ru` based on y
 2. Import the project on <https://vercel.com>.
 3. In **Settings → Environment Variables**, add every variable from `.env.example`.
 4. Set `NEXT_PUBLIC_APP_URL` to your production URL (e.g. `https://bugatti-sound.vercel.app`).
-5. After the first deploy, update your Stripe webhook endpoint to point at the production URL.
+5. After the first deploy, update your ЮKassa notification (webhook) URL to point at the production `/api/yookassa/webhook`.
 6. In Supabase **Authentication → URL Configuration**, add the production URL plus `/auth/callback` to the allow-list.
 
 ## Project layout
@@ -107,14 +105,14 @@ src/
       admin                 # moderation panel
       pricing
     api/
-      stripe/{checkout,portal,webhook}/route.ts
+      yookassa/{checkout,portal,webhook}/route.ts
       tracks/[id]/download/route.ts
       admin/{moderate,bootstrap}/route.ts
   components/               # client + server components
   i18n/                     # en.json / ru.json + provider
   lib/
     supabase/{server,client,admin,proxy}.ts
-    stripe/server.ts
+    yookassa/server.ts
     storage.ts
     env.ts
   types/db.ts
@@ -138,7 +136,7 @@ supabase/migrations/        # SQL you run in Supabase SQL editor
 - Approved tracks are publicly readable; pending / rejected ones are visible only to their uploader and admins.
 - Full audio lives in the **private** `audio-tracks` bucket — only reachable via signed URLs minted by the server after verifying the caller's `is_premium` flag (or `admin` role).
 - Previews and covers live in **public** buckets so they can be streamed by anonymous visitors.
-- Stripe webhooks verify the signature and use the service-role key to flip `profiles.is_premium`.
+- ЮKassa webhooks re-fetch each payment via the API to verify it (ЮKassa does not sign webhook bodies) and use the service-role key to flip `profiles.is_premium`.
 
 ## Roadmap (good first follow-ups)
 

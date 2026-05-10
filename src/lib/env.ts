@@ -19,13 +19,8 @@ export const env = {
   supabaseServiceRoleKey: () =>
     required("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY),
 
-  stripeSecretKey: () => required("STRIPE_SECRET_KEY", process.env.STRIPE_SECRET_KEY),
-  stripePublishableKey: () =>
-    required("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY),
-  stripeWebhookSecret: () =>
-    required("STRIPE_WEBHOOK_SECRET", process.env.STRIPE_WEBHOOK_SECRET),
-  stripePremiumPriceId: () =>
-    required("STRIPE_PREMIUM_PRICE_ID", process.env.STRIPE_PREMIUM_PRICE_ID),
+  yookassaShopId: () => required("YOOKASSA_SHOP_ID", process.env.YOOKASSA_SHOP_ID),
+  yookassaSecretKey: () => required("YOOKASSA_SECRET_KEY", process.env.YOOKASSA_SECRET_KEY),
 
   appUrl: () => {
     if (process.env.NEXT_PUBLIC_APP_URL && process.env.NEXT_PUBLIC_APP_URL.length > 0) {
@@ -50,6 +45,6 @@ export function hasSupabaseEnv(): boolean {
   return !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 }
 
-export function hasStripeEnv(): boolean {
-  return !!process.env.STRIPE_SECRET_KEY && !!process.env.STRIPE_PREMIUM_PRICE_ID;
+export function hasYookassaEnv(): boolean {
+  return !!process.env.YOOKASSA_SHOP_ID && !!process.env.YOOKASSA_SECRET_KEY;
 }
