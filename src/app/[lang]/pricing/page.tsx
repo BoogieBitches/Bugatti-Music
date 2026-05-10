@@ -2,7 +2,7 @@ import { isLocale } from "@/i18n/config";
 import { notFound } from "next/navigation";
 import { getDictionary } from "@/i18n/dictionaries";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { hasSupabaseEnv, hasStripeEnv } from "@/lib/env";
+import { hasSupabaseEnv, hasYookassaEnv } from "@/lib/env";
 import { CheckoutButton } from "@/components/CheckoutButton";
 import { Check } from "lucide-react";
 
@@ -84,7 +84,7 @@ export default async function PricingPage({ params }: PageProps<"/[lang]/pricing
               dict={dict}
               isLoggedIn={isLoggedIn}
               isPremium={isPremium}
-              stripeReady={hasStripeEnv()}
+              yookassaReady={hasYookassaEnv()}
             />
           </div>
         </div>
