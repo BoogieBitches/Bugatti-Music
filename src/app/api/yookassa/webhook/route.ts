@@ -105,13 +105,18 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.event === "refund.succeeded") {
-      // refund.object.payment_id points to the original payment; re-fetch it
-      // to find the user, then revoke Premium.
-      const paymentId = body.object.payment_id;
-      if (!paymentId) {
+      // Verify the refund itself via API — never trust payment_id from the
+      // unsigned body. Without this an attacker holding any valid payment_id
+      // could forge a refund.succeeded webhook to revoke that user's Premium.
+      const refund = await yoo.getRefund(body.object.id);
+      if (refund.status !== "succeeded") {
+        console.warn("[yookassa-webhook] refund.succeeded but verified status differs", {
+          refundId: refund.id,
+          status: refund.status,
+        });
         return NextResponse.json({ received: true, ignored: true });
       }
-      const payment = await yoo.getPayment(paymentId);
+      const payment = await yoo.getPayment(refund.payment_id);
       const userId = (payment.metadata as Record<string, string> | null)?.supabase_user_id;
       if (!userId) {
         return NextResponse.json({ received: true, orphan: true });
@@ -124,7 +129,11 @@ export async function POST(request: NextRequest) {
         console.error("[yookassa-webhook] revoke premium error", updErr);
         return NextResponse.json({ error: updErr.message }, { status: 500 });
       }
-      console.log("[yookassa-webhook] premium revoked (refund)", { userId, paymentId });
+      console.log("[yookassa-webhook] premium revoked (refund)", {
+        userId,
+        refundId: refund.id,
+        paymentId: refund.payment_id,
+      });
       return NextResponse.json({ received: true });
     }
 
