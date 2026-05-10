@@ -16,6 +16,8 @@ export interface Profile {
   premium_until: string | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  yookassa_payment_method_id: string | null;
+  yookassa_last_payment_id: string | null;
   preferred_locale: Locale;
   created_at: string;
   updated_at: string;
