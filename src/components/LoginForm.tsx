@@ -9,7 +9,6 @@ interface Props {
   locale: Locale;
   next: string;
   dict: Dictionary;
-  mode: "login" | "signup";
 }
 
 // Auth is Google-only for now (Telegram + VK can be added as separate
