@@ -93,6 +93,10 @@
   "catalog": {
     "title": "Catalog",
     "noResults": "No tracks match your filters yet.",
+    "emptyTitle": "The pool is just opening.",
+    "emptyBody": "Bugatti Sound is in its founding-releases phase. Be one of the first artists — upload your first track and it will land in the catalog right after moderation.",
+    "emptyCta": "Upload a track",
+    "emptySecondary": "See pricing",
     "filters": {
       "genre": "Genre",
       "style": "Style",
@@ -182,7 +186,7 @@
     },
     "premium": {
       "name": "Premium",
-      "price": "$5",
+      "price": "499 ₽",
       "period": "/ month",
       "features": ["Unlimited full-quality downloads", "Early access to new uploads", "No ads, no limits", "Cancel anytime"],
       "cta": "Start Premium"
@@ -193,6 +197,33 @@
     "generic": "Something went wrong. Please try again."
   },
   "footer": {
-    "rights": "All rights reserved."
+    "rights": "All rights reserved.",
+    "legal": "Legal",
+    "terms": "Terms of Service",
+    "privacy": "Privacy Policy",
+    "requisites": "Business details"
+  },
+  "earlyProducers": {
+    "eyebrow": "For producers",
+    "title": "Be the first artist.",
+    "body": "We just opened the doors. Early artists get maximum exposure, a spot in Trending, and a 'founding artist' badge on their profile. Upload your track — it will land in the catalog after a quick review.",
+    "cta": "Upload your first track",
+    "secondary": "How it works"
+  },
+  "legal": {
+    "terms": {
+      "title": "Terms of Service",
+      "lastUpdated": "Last updated",
+      "intro": "By using Bugatti Sound, you agree to the terms below. Please read them carefully."
+    },
+    "privacy": {
+      "title": "Privacy Policy",
+      "lastUpdated": "Last updated",
+      "intro": "We respect your privacy and only process data as described in this policy."
+    },
+    "requisites": {
+      "title": "Business details",
+      "intro": "Information about the service owner, as required by Russian law."
+    }
   }
 }

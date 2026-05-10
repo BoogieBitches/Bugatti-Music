@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getDictionary } from "@/i18n/dictionaries";
 import { hasSupabaseEnv } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import Link from "next/link";
 import { TrackCard } from "@/components/TrackCard";
 import { CatalogFilters } from "@/components/CatalogFilters";
 import type { Genre, TrackWithGenre } from "@/types/db";
@@ -94,8 +95,40 @@ export default async function CatalogPage({
         </div>
       )}
 
-      {configured && tracks.length === 0 && (
+      {configured && tracks.length === 0 && (q || genreSlug || minBpm || maxBpm) && (
         <div className="mt-10 bs-card p-6 text-[var(--muted)]">{dict.catalog.noResults}</div>
+      )}
+
+      {configured && tracks.length === 0 && !(q || genreSlug || minBpm || maxBpm) && (
+        <section className="mt-12 relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#0e0e12] via-[#17121b] to-[#0e0e12] px-6 py-16 md:px-14 md:py-24">
+          <div
+            aria-hidden
+            className="absolute inset-0 -z-[1]"
+            style={{
+              background:
+                "radial-gradient(60% 60% at 20% 10%, rgba(255,122,0,0.14), transparent 70%), radial-gradient(50% 50% at 90% 90%, rgba(91,140,255,0.18), transparent 70%)",
+            }}
+          />
+          <div className="max-w-2xl">
+            <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-4">
+              {lang === "ru" ? "Старт пула" : "Pool opening"}
+            </div>
+            <h2 className="font-display text-3xl md:text-5xl font-bold tracking-tight text-white leading-[1.02]">
+              {dict.catalog.emptyTitle}
+            </h2>
+            <p className="mt-5 text-[var(--muted)] text-base md:text-lg max-w-xl">
+              {dict.catalog.emptyBody}
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link href={`/${lang}/upload`} className="bs-button bs-button-primary text-base">
+                {dict.catalog.emptyCta} →
+              </Link>
+              <Link href={`/${lang}/pricing`} className="bs-button text-base">
+                {dict.catalog.emptySecondary}
+              </Link>
+            </div>
+          </div>
+        </section>
       )}
 
       {tracks.length > 0 && (
