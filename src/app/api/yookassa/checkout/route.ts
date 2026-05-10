@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { randomUUID } from "node:crypto";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   getYooCheckout,
   YOOKASSA_CURRENCY,
@@ -31,8 +30,7 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as { locale?: string };
   const locale = body.locale === "ru" ? "ru" : "en";
 
-  const admin = createSupabaseAdminClient();
-  const { data: profile } = await admin
+  const { data: profile } = await supabase
     .from("profiles")
     .select("is_premium, premium_until")
     .eq("id", user.id)
@@ -76,10 +74,11 @@ export async function POST(request: NextRequest) {
     const idempotenceKey = randomUUID();
     const payment = await yoo.createPayment(payload, idempotenceKey);
 
-    await admin
-      .from("profiles")
-      .update({ yookassa_last_payment_id: payment.id })
-      .eq("id", user.id);
+    // Do NOT write yookassa_last_payment_id here. The webhook handler treats
+    // a match between profile.yookassa_last_payment_id and the incoming
+    // payment id as a "duplicate, already processed" signal, so pre-writing
+    // would cause every payment.succeeded webhook to short-circuit before
+    // activating Premium. The webhook is the sole writer of that column.
 
     const url = payment.confirmation?.confirmation_url;
     if (!url) {
