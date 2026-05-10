@@ -4,9 +4,9 @@ import { getDictionary } from "@/i18n/dictionaries";
 import Link from "next/link";
 
 export const metadata = {
-  title: "Реквизиты · Bugatti Sound",
+  title: "Business Details · Bugatti Sound",
   description:
-    "Сведения о владельце сервиса Bugatti Sound в соответствии с требованиями законодательства РФ.",
+    "Service owner details for Bugatti Sound, as required by Russian law.",
 };
 
 const OWNER = {
