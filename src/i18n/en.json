@@ -67,6 +67,7 @@
     "submitLogin": "Sign in",
     "submitSignup": "Create account",
     "googleContinue": "Continue with Google",
+    "googleOnlyHint": "We use Google for sign-in so you never have to manage a separate password. More providers coming soon.",
     "or": "or",
     "haveAccount": "Already have an account?",
     "noAccount": "Don't have an account?",

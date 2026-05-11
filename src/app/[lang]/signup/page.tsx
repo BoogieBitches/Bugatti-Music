@@ -17,7 +17,7 @@ export default async function SignupPage({
     <div className="max-w-md mx-auto px-4 py-16">
       <h1 className="text-3xl font-bold tracking-tight">{dict.auth.signupTitle}</h1>
       <div className="mt-6">
-        <LoginForm locale={lang} next={next} dict={dict} mode="signup" />
+        <LoginForm locale={lang} next={next} dict={dict} />
       </div>
     </div>
   );
