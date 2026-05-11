@@ -18,8 +18,8 @@ export function HeroWaveform() {
   const bars = Array.from({ length: BARS }, (_, i) => {
     const r1 = hash(i, 1);
     const r2 = hash(i, 2);
-    const baseH = 18 + r1 * 62;          // 18–80%
-    const peakH = 35 + r2 * 65;          // 35–100%
+    const baseH = 18 + r1 * 62;                   // 18–80%
+    const peakH = Math.max(baseH + 8, 35 + r2 * 65); // always > baseH (≥ +8%)
     const delay = -(r1 * 2.6).toFixed(2); // negative so animation pre-rolls
     const duration = (1.6 + r2 * 1.8).toFixed(2); // 1.6–3.4s
     return { baseH, peakH, delay, duration };
