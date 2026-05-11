@@ -160,7 +160,13 @@
       "free": "You are on the Free plan.",
       "premiumActive": "Premium active until {date}",
       "manage": "Manage subscription",
-      "upgrade": "Upgrade to Premium"
+      "upgrade": "Upgrade to Premium",
+      "cardSaved": "Card linked for subscription auto-renewal.",
+      "noCard": "No card linked. Auto-renewal is off — your subscription will not renew automatically at the end of the period.",
+      "unbindCard": "Unlink card",
+      "unbindConfirm": "Sure? Your card will be unlinked and auto-renewal will turn off. Premium stays active until the end of the paid period.",
+      "unbindConfirmYes": "Yes, unlink",
+      "unbindConfirmNo": "Cancel"
     },
     "myTracks": {
       "title": "My tracks",
