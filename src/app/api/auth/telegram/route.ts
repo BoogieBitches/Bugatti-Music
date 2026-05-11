@@ -156,21 +156,23 @@ function redirectToLogin(
 }
 
 /**
- * Supabase JS doesn't expose `getUserByEmail` on the admin API, so we query
- * auth.users directly via the service-role REST endpoint. The auth schema is
- * exposed via PostgREST when the service role is in use.
+ * Supabase JS doesn't expose `getUserByEmail` on the admin API and PostgREST
+ * refuses to query the `auth` schema (PGRST106). The remaining option is
+ * `listUsers`, which paginates over `auth.users`. For our scale (telegram
+ * sign-ins per minute, not per second), scanning the first page is fine.
+ *
+ * If user count grows past ~1k, switch to the GoTrue admin REST endpoint
+ * directly: `GET /auth/v1/admin/users?email=<email>`.
  */
 async function findUserIdByEmail(
   admin: ReturnType<typeof createSupabaseAdminClient>,
   email: string,
 ): Promise<string | null> {
-  type AuthUserRow = { id: string };
-  const { data, error } = await admin
-    .schema("auth")
-    .from("users")
-    .select("id")
-    .eq("email", email)
-    .maybeSingle<AuthUserRow>();
-  if (error || !data) return null;
-  return data.id;
+  const { data, error } = await admin.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
+  if (error || !data?.users) return null;
+  const match = data.users.find((u) => u.email === email);
+  return match?.id ?? null;
 }
