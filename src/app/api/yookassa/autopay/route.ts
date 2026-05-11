@@ -73,6 +73,13 @@ export async function GET(request: NextRequest) {
     .not("premium_until", "is", null)
     .lte("premium_until", cutoff.toISOString())
     .gte("premium_until", now.toISOString())
+    // Process the soonest-to-expire users first. Without an explicit order
+    // PostgreSQL can return rows in arbitrary heap/index order, so when the
+    // candidate set exceeds MAX_RENEWALS_PER_RUN a user expiring in hours
+    // could be skipped in favour of one expiring in two days — and by the
+    // next cron run the skipped user's premium_until would have passed,
+    // making them ineligible forever.
+    .order("premium_until", { ascending: true })
     .limit(MAX_RENEWALS_PER_RUN);
 
   if (queryErr) {
