@@ -51,9 +51,12 @@ export default async function DashboardPage({ params }: PageProps<"/[lang]/dashb
             ? dict.dashboard.subscription.premiumActive.replace("{date}", formattedUntil)
             : dict.dashboard.subscription.free}
         </p>
-        <div className="mt-4 flex gap-3">
+        <div className="mt-4">
           {isPremium ? (
-            <ManageSubscriptionButton dict={dict} />
+            <ManageSubscriptionButton
+              dict={dict}
+              hasSavedCard={!!profile?.yookassa_payment_method_id}
+            />
           ) : (
             <Link href={`/${lang}/pricing`} className="bs-button bs-button-primary">
               {dict.dashboard.subscription.upgrade}
