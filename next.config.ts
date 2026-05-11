@@ -12,21 +12,36 @@ const supabaseHost = (() => {
 
 const nextConfig: NextConfig = {
   images: {
-    remotePatterns: supabaseHost
-      ? [
-          {
-            protocol: "https",
-            hostname: supabaseHost,
-            pathname: "/storage/v1/object/public/**",
-          },
-        ]
-      : [
-          {
-            protocol: "https",
-            hostname: "*.supabase.co",
-            pathname: "/storage/v1/object/public/**",
-          },
-        ],
+    remotePatterns: [
+      ...(supabaseHost
+        ? [
+            {
+              protocol: "https" as const,
+              hostname: supabaseHost,
+              pathname: "/storage/v1/object/public/**",
+            },
+          ]
+        : [
+            {
+              protocol: "https" as const,
+              hostname: "*.supabase.co",
+              pathname: "/storage/v1/object/public/**",
+            },
+          ]),
+      // Telegram profile photos returned by the Login Widget live at
+      // https://t.me/i/userpic/... and on the cdn4.cachetelegram.org host
+      // (varies by region). Allow both so <Image> can render avatars when
+      // we eventually surface them in the UI.
+      {
+        protocol: "https" as const,
+        hostname: "t.me",
+        pathname: "/i/userpic/**",
+      },
+      {
+        protocol: "https" as const,
+        hostname: "*.cachetelegram.org",
+      },
+    ],
   },
 };
 
