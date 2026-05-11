@@ -10,6 +10,8 @@ import { Coverflow } from "@/components/Coverflow";
 import { TextReveal } from "@/components/TextReveal";
 import { Marquee } from "@/components/Marquee";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
+import { HeroWaveform } from "@/components/HeroWaveform";
+import { HeroParticles } from "@/components/HeroParticles";
 
 export default async function HomePage({ params }: PageProps<"/[lang]">) {
   const { lang } = await params;
@@ -234,8 +236,11 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
       {/* HERO — POOL UP with violet halo background */}
       <section className="hero-violet relative overflow-hidden">
         <div aria-hidden className="hero-violet-bg" />
+        <div aria-hidden className="hero-moving-gradient" />
         <div aria-hidden className="hero-violet-stars" />
         <div aria-hidden className="hero-violet-halo" />
+        <HeroWaveform />
+        <HeroParticles />
 
         <div className="relative max-w-[1400px] mx-auto px-5 md:px-10 pt-12 md:pt-20 pb-10 md:pb-16">
           {/* Eyebrow — small editorial label */}
@@ -251,6 +256,20 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
           >
             pool up
           </h1>
+
+          {/* Cinematic subtitle — thin, semi-transparent, glowing */}
+          <p className="hero-subtitle mt-5 md:mt-7">
+            {lang === "ru" ? (
+              <>
+                Эксклюзивная музыка для DJ —{" "}
+                <em>раньше, чем мир услышит.</em>
+              </>
+            ) : (
+              <>
+                Exclusive music for DJs <em>before the world hears it.</em>
+              </>
+            )}
+          </p>
 
           {/* Refined accent rule — a thin line that fades into the violet */}
           <div aria-hidden className="hero-rule" />
