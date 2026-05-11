@@ -90,8 +90,32 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ url });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "ЮKassa error";
     console.error("[yookassa-checkout] createPayment failed", err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    // yoo-checkout SDK throws plain objects (not Error instances) on API
+    // errors. Extract the real reason — shop owners need to know if it's
+    // `invalid_credentials`, `forbidden`, `unauthorized`, etc.
+    const detail = describeYookassaError(err);
+    return NextResponse.json({ error: detail }, { status: 500 });
   }
+}
+
+function describeYookassaError(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (err && typeof err === "object") {
+    const o = err as Record<string, unknown>;
+    const parts: string[] = [];
+    if (typeof o.code === "string") parts.push(o.code);
+    if (typeof o.id === "string") parts.push(`id=${o.id}`);
+    if (typeof o.description === "string") parts.push(o.description);
+    if (typeof o.parameter === "string") parts.push(`param=${o.parameter}`);
+    if (typeof o.type === "string" && parts.length === 0) parts.push(o.type);
+    if (parts.length > 0) return `ЮKassa: ${parts.join(" — ")}`;
+    try {
+      const json = JSON.stringify(err);
+      if (json && json !== "{}") return `ЮKassa: ${json.slice(0, 240)}`;
+    } catch {
+      /* ignore */
+    }
+  }
+  return "ЮKassa error";
 }
