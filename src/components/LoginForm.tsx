@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { Locale } from "@/i18n/config";
+import { TelegramLoginButton } from "@/components/TelegramLoginButton";
 
 interface Props {
   locale: Locale;
@@ -11,17 +13,46 @@ interface Props {
   dict: Dictionary;
 }
 
-// Auth is Google-only for now (Telegram + VK can be added as separate
-// providers later). Email/password is intentionally hidden because the
-// default Supabase SMTP is rate-limited too aggressively to ship without
-// a custom mail provider, and Google already covers ~all of the target
-// audience.
+// Auth providers:
+//   - Google (always available)
+//   - Telegram (only if NEXT_PUBLIC_TELEGRAM_BOT_USERNAME is configured)
+//
+// Email/password is intentionally hidden because the default Supabase SMTP
+// is rate-limited too aggressively to ship without a custom mail provider.
+// Google + Telegram cover ~all of the target audience.
 export function LoginForm({ locale, next, dict }: Props) {
-  const [error, setError] = useState<string | null>(null);
+  // Errors come from two sources we treat uniformly:
+  //   1. /api/auth/telegram redirects back with ?error=... — derived from the URL.
+  //   2. Google sign-in failures — set as local state when handleGoogle errors.
+  // The Google handler sets `urlErrorDismissed=true` so a fresh failure
+  // doesn't get overshadowed by a stale URL error from a previous attempt.
+  const [googleError, setGoogleError] = useState<string | null>(null);
+  const [urlErrorDismissed, setUrlErrorDismissed] = useState(false);
   const [loading, setLoading] = useState(false);
+  const searchParams = useSearchParams();
+
+  const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "";
+  const telegramEnabled = botUsername.length > 0;
+
+  const urlError = (() => {
+    if (urlErrorDismissed) return null;
+    const code = searchParams.get("error");
+    if (!code) return null;
+    if (code === "telegram_invalid_signature") return dict.auth.telegramErrorInvalid;
+    if (
+      code === "telegram_not_configured" ||
+      code === "telegram_provision_failed" ||
+      code === "telegram_session_failed"
+    ) {
+      return dict.auth.telegramErrorConfig;
+    }
+    return null;
+  })();
+  const error = googleError ?? urlError;
 
   async function handleGoogle() {
-    setError(null);
+    setGoogleError(null);
+    setUrlErrorDismissed(true);
     setLoading(true);
     const supabase = createSupabaseBrowserClient();
     const { error } = await supabase.auth.signInWithOAuth({
@@ -31,7 +62,7 @@ export function LoginForm({ locale, next, dict }: Props) {
       },
     });
     if (error) {
-      setError(error.message);
+      setGoogleError(error.message);
       setLoading(false);
     }
     // If no error, the browser is being redirected to Google — leave the
@@ -73,8 +104,24 @@ export function LoginForm({ locale, next, dict }: Props) {
         {loading ? dict.common.loading : dict.auth.googleContinue}
       </button>
 
+      {telegramEnabled && (
+        <>
+          <div className="flex items-center gap-3 my-4 text-xs uppercase tracking-wider text-[var(--muted)]">
+            <span className="flex-1 h-px bg-white/10" />
+            <span>{dict.auth.or}</span>
+            <span className="flex-1 h-px bg-white/10" />
+          </div>
+          <TelegramLoginButton
+            botUsername={botUsername}
+            lang={locale}
+            next={next}
+            hint={dict.auth.telegramHint}
+          />
+        </>
+      )}
+
       <p className="mt-5 text-center text-xs text-[var(--muted)] leading-relaxed">
-        {dict.auth.googleOnlyHint}
+        {telegramEnabled ? dict.auth.socialOnlyHint : dict.auth.googleOnlyHint}
       </p>
     </div>
   );
