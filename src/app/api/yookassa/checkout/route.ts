@@ -100,22 +100,42 @@ export async function POST(request: NextRequest) {
 }
 
 function describeYookassaError(err: unknown): string {
-  if (err instanceof Error && err.message) return err.message;
-  if (err && typeof err === "object") {
-    const o = err as Record<string, unknown>;
-    const parts: string[] = [];
-    if (typeof o.code === "string") parts.push(o.code);
-    if (typeof o.id === "string") parts.push(`id=${o.id}`);
-    if (typeof o.description === "string") parts.push(o.description);
-    if (typeof o.parameter === "string") parts.push(`param=${o.parameter}`);
-    if (typeof o.type === "string" && parts.length === 0) parts.push(o.type);
-    if (parts.length > 0) return `ЮKassa: ${parts.join(" — ")}`;
-    try {
-      const json = JSON.stringify(err);
-      if (json && json !== "{}") return `ЮKassa: ${json.slice(0, 240)}`;
-    } catch {
-      /* ignore */
-    }
+  if (!err || typeof err !== "object") {
+    return err instanceof Error && err.message ? err.message : "ЮKassa error";
   }
+
+  const o = err as Record<string, unknown>;
+
+  // 1. Axios-style errors: status + response.data with code/description.
+  const response = (o.response ?? null) as Record<string, unknown> | null;
+  if (response && typeof response === "object") {
+    const data = (response.data ?? null) as Record<string, unknown> | null;
+    const status = typeof response.status === "number" ? response.status : null;
+    const parts: string[] = [];
+    if (status !== null) parts.push(`http=${status}`);
+    if (data && typeof data === "object") {
+      if (typeof data.code === "string") parts.push(data.code);
+      if (typeof data.description === "string") parts.push(data.description);
+      if (typeof data.parameter === "string") parts.push(`param=${data.parameter}`);
+      if (typeof data.id === "string") parts.push(`id=${data.id}`);
+    }
+    if (parts.length > 0) return `ЮKassa: ${parts.join(" — ")}`;
+  }
+
+  // 2. Plain yoo-checkout SDK error shape.
+  const parts: string[] = [];
+  if (typeof o.code === "string") parts.push(o.code);
+  if (typeof o.id === "string") parts.push(`id=${o.id}`);
+  if (typeof o.description === "string") parts.push(o.description);
+  if (typeof o.parameter === "string") parts.push(`param=${o.parameter}`);
+  if (typeof o.type === "string" && parts.length === 0) parts.push(o.type);
+  if (parts.length > 0) return `ЮKassa: ${parts.join(" — ")}`;
+
+  // 3. Axios error with no response (network / DNS / cert): use err.code + err.message.
+  if (typeof o.code === "string" && typeof o.message === "string") {
+    return `ЮKassa: ${o.code} — ${o.message}`;
+  }
+  if (typeof o.message === "string" && o.message) return `ЮKassa: ${o.message}`;
+
   return "ЮKassa error";
 }
