@@ -6,6 +6,7 @@ import { isLocale } from "@/i18n/config";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { AuroraBackground } from "@/components/AuroraBackground";
+import { GrainOverlay } from "@/components/GrainOverlay";
 import { CursorSpotlight } from "@/components/CursorSpotlight";
 import { SideRailServer } from "@/components/SideRailServer";
 import { PlayerProvider } from "@/components/player/PlayerStore";
@@ -81,6 +82,7 @@ export default async function LangLayout({
     >
       <body>
         <AuroraBackground />
+        <GrainOverlay />
         <CursorSpotlight />
         <I18nProvider locale={lang} dict={dict}>
           <PlayerProvider>

@@ -9,6 +9,7 @@ import type { Genre, TrackWithGenre } from "@/types/db";
 import { Coverflow } from "@/components/Coverflow";
 import { TextReveal } from "@/components/TextReveal";
 import { Marquee } from "@/components/Marquee";
+import { RevealOnScroll } from "@/components/RevealOnScroll";
 
 export default async function HomePage({ params }: PageProps<"/[lang]">) {
   const { lang } = await params;
@@ -445,14 +446,14 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
         </header>
 
         <div className="grid md:grid-cols-3 gap-5 md:gap-6">
-          {plans.map((plan) => (
+          {plans.map((plan, idx) => (
+            <RevealOnScroll key={plan.name} delay={idx * 0.08}>
             <div
-              key={plan.name}
               className={`relative rounded-3xl p-7 md:p-8 border ${
                 plan.featured
                   ? "border-[var(--accent)]/60 bg-gradient-to-br from-[var(--accent)]/15 via-black/60 to-[var(--accent-2)]/10"
                   : "border-[var(--border)] bg-black/40"
-              } backdrop-blur-sm flex flex-col`}
+              } backdrop-blur-sm flex flex-col h-full transition-transform duration-300 hover:-translate-y-1`}
             >
               {plan.featured && (
                 <div className="absolute top-5 right-5 text-[10px] tracking-[0.24em] uppercase text-[var(--accent-3)] font-display font-bold">
@@ -490,6 +491,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                 {plan.cta} →
               </Link>
             </div>
+            </RevealOnScroll>
           ))}
         </div>
       </section>
@@ -516,18 +518,20 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-12 md:gap-y-16">
           {benefits.map((b, i) => (
-            <div key={b.title} className="relative">
-              <div className="font-display text-3xl font-bold tabular-nums tracking-tighter text-white/30 mb-3">
-                {String(i + 1).padStart(2, "0")}
+            <RevealOnScroll key={b.title} delay={i * 0.06}>
+              <div className="relative">
+                <div className="font-display text-3xl font-bold tabular-nums tracking-tighter text-white/30 mb-3">
+                  {String(i + 1).padStart(2, "0")}
+                </div>
+                <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-3">
+                  {b.kicker}
+                </div>
+                <h3 className="font-display text-2xl md:text-3xl font-bold tracking-tight text-white leading-tight">
+                  {b.title}
+                </h3>
+                <p className="mt-4 text-[var(--muted)] text-base">{b.body}</p>
               </div>
-              <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-3">
-                {b.kicker}
-              </div>
-              <h3 className="font-display text-2xl md:text-3xl font-bold tracking-tight text-white leading-tight">
-                {b.title}
-              </h3>
-              <p className="mt-4 text-[var(--muted)] text-base">{b.body}</p>
-            </div>
+            </RevealOnScroll>
           ))}
         </div>
       </section>
@@ -678,7 +682,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
           </header>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 md:gap-5">
-            {newTracks.slice(0, 8).map((t) => {
+            {newTracks.slice(0, 8).map((t, idx) => {
               const cover = publicCover(t.cover_image_path);
               const genreName = t.genre
                 ? lang === "ru"
@@ -686,34 +690,43 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                   : t.genre.name_en
                 : "";
               return (
-                <Link
-                  key={t.id}
-                  href={`${lp}/track/${t.id}`}
-                  className="group relative block"
-                >
-                  <div className="relative aspect-square rounded-2xl overflow-hidden ring-1 ring-white/10 bg-black/40">
-                    {cover ? (
-                      <Image
-                        src={cover}
-                        alt={t.title}
-                        fill
-                        sizes="(min-width: 768px) 25vw, 50vw"
-                        className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                <RevealOnScroll key={t.id} delay={(idx % 4) * 0.06}>
+                  <Link
+                    href={`${lp}/track/${t.id}`}
+                    className="group relative block"
+                  >
+                    <div className="relative aspect-square rounded-2xl overflow-hidden ring-1 ring-white/10 bg-black/40 transition-shadow duration-300 group-hover:ring-[var(--accent-2)]/40 group-hover:shadow-[0_18px_44px_-18px_rgba(122,85,255,0.6)]">
+                      {cover ? (
+                        <Image
+                          src={cover}
+                          alt={t.title}
+                          fill
+                          sizes="(min-width: 768px) 25vw, 50vw"
+                          className="object-cover transition-transform duration-500 group-hover:scale-[1.06]"
+                        />
+                      ) : (
+                        <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent)]/30 to-[var(--accent-2)]/20" />
+                      )}
+                      <div
+                        aria-hidden
+                        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                        style={{
+                          background:
+                            "radial-gradient(60% 60% at 50% 50%, rgba(184,157,255,0.18), transparent 70%)",
+                        }}
                       />
-                    ) : (
-                      <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent)]/30 to-[var(--accent-2)]/20" />
-                    )}
-                  </div>
-                  <div className="mt-3">
-                    <div className="font-display text-base md:text-lg font-bold text-white truncate">
-                      {t.title}
                     </div>
-                    <div className="text-sm text-[var(--muted)] truncate">
-                      {t.artist}
-                      {genreName ? ` · ${genreName}` : ""}
+                    <div className="mt-3">
+                      <div className="font-display text-base md:text-lg font-bold text-white truncate group-hover:text-[var(--accent-3)] transition-colors">
+                        {t.title}
+                      </div>
+                      <div className="text-sm text-[var(--muted)] truncate">
+                        {t.artist}
+                        {genreName ? ` · ${genreName}` : ""}
+                      </div>
                     </div>
-                  </div>
-                </Link>
+                  </Link>
+                </RevealOnScroll>
               );
             })}
           </div>
