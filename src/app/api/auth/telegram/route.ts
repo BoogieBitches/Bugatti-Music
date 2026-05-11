@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { env, hasSupabaseEnv } from "@/lib/env";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { hasSupabaseEnv } from "@/lib/env";
 import {
   telegramDisplayName,
   telegramSyntheticEmail,
@@ -23,10 +24,11 @@ const ALLOWED_LANGS = new Set(["ru", "en"]);
  *   1. Verify the HMAC signature with the bot token (proves Telegram signed it).
  *   2. Reject payloads older than 1h (replay defense, enforced in lib/telegram).
  *   3. Provision or update the matching Supabase user via the service role.
- *   4. Generate a magic-link action_link and 302 the browser to it. Supabase
- *      verifies the token and PKCE-redirects to /[lang]/auth/callback?code=...,
- *      which our existing handler exchanges for a session cookie. From the
- *      browser's perspective this is identical to a Google sign-in landing.
+ *   4. Mint a magic-link OTP, verify it through the SSR server client to write
+ *      the auth cookies onto the response, then 303 to `next`. We deliberately
+ *      do NOT redirect the browser to Supabase's `action_link`: that flow
+ *      returns the session in the URL hash (`#access_token=...`), which never
+ *      reaches the server and so never becomes a cookie.
  */
 export async function GET(req: NextRequest) {
   const reqUrl = new URL(req.url);
@@ -101,23 +103,33 @@ export async function GET(req: NextRequest) {
     return redirectToLogin(reqUrl, lang, next, "telegram_provision_failed");
   }
 
-  // Issue a magic-link action_link pointed at our normal /auth/callback.
-  // The redirect_to has to be on a domain explicitly allowed in the Supabase
-  // dashboard (Authentication → URL Configuration). We use APP_URL which is
-  // the same origin the rest of the site runs on.
-  const redirectTo = `${env.appUrl()}/${lang}/auth/callback?next=${encodeURIComponent(next)}`;
+  // Mint a magic-link OTP server-side, then verify it through our SSR server
+  // client so the auth cookies land on the outgoing response. Following the
+  // action_link directly puts tokens in the URL hash (implicit flow), which
+  // never reaches the server and so never gets exchanged for a cookie.
   const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
     type: "magiclink",
     email,
-    options: { redirectTo },
   });
-  if (linkErr || !linkData?.properties?.action_link) {
+  if (linkErr || !linkData?.properties?.email_otp) {
     console.error("[telegram-auth] generateLink failed", linkErr);
     return redirectToLogin(reqUrl, lang, next, "telegram_session_failed");
   }
 
-  // 303 ensures the browser switches to GET when following the redirect.
-  return NextResponse.redirect(linkData.properties.action_link, 303);
+  const server = await createSupabaseServerClient();
+  const { error: verifyErr } = await server.auth.verifyOtp({
+    email,
+    token: linkData.properties.email_otp,
+    type: "magiclink",
+  });
+  if (verifyErr) {
+    console.error("[telegram-auth] verifyOtp failed", verifyErr);
+    return redirectToLogin(reqUrl, lang, next, "telegram_session_failed");
+  }
+
+  // verifyOtp wrote the auth cookies via the SSR cookies handler; just
+  // redirect into the protected area. 303 forces the browser to GET.
+  return NextResponse.redirect(new URL(next, reqUrl), 303);
 }
 
 function pickLang(raw: string | null): "ru" | "en" {
