@@ -66,7 +66,7 @@ function TermsRu({ lp }: { lp: string }) {
         Bugatti Sound — онлайн-пул музыкальных треков для диджеев (далее — «Сервис»).
         Сервис позволяет слушать 30-секундные превью, скачивать полные треки по подписке Premium,
         а зарегистрированным артистам — загружать свои треки на модерацию. Сервис работает
-        по адресу bugatti-music.vercel.app и связанным доменам.
+        по адресу bugattisound.online и связанным доменам.
       </p>
 
       <H2>2. Принятие условий</H2>
@@ -174,7 +174,7 @@ function TermsEn({ lp }: { lp: string }) {
         Bugatti Sound is an online music pool for DJs (the &quot;Service&quot;). The Service lets
         visitors listen to 30-second previews, download full tracks under a Premium subscription,
         and, for registered artists, upload their own tracks for moderation. The Service is
-        available at bugatti-music.vercel.app and related domains.
+        available at bugattisound.online and related domains.
       </p>
 
       <H2>2. Acceptance</H2>

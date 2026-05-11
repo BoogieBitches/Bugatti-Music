@@ -14,7 +14,7 @@ const OWNER = {
   inn: "352531433045",
   status: "Самозанятый (плательщик НПД, регистрация ФНС России)",
   email: "matrix198605@gmail.com",
-  site: "bugatti-music.vercel.app",
+  site: "bugattisound.online",
 };
 
 export default async function RequisitesPage({
