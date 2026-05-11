@@ -23,16 +23,42 @@ interface YooKassaEvent {
 }
 
 const PREMIUM_PERIOD_DAYS = 30;
+const PREMIUM_PERIOD_MS = PREMIUM_PERIOD_DAYS * 24 * 60 * 60 * 1000;
 
-// Anchor premium_until to the payment's captured_at (or created_at as a
-// fallback) rather than Date.now(). This makes replays harmless: a second
-// invocation of payment.succeeded for the same payment id always recomputes
-// the same expiry instead of pushing it forward by another 30 days.
-function premiumUntilFromPayment(payment: { captured_at?: string; created_at?: string }): string {
+// Compute the new premium_until after a successful payment.
+//
+// Base case (first purchase or expired renewal):
+//   premium_until = captured_at + 30d
+// Anchoring on captured_at (not Date.now()) keeps webhook replays harmless —
+// a second delivery of the same payment.succeeded recomputes the same value.
+//
+// Autopay renewal case:
+//   Autopay runs up to RENEWAL_LEAD_DAYS *before* the current period ends so
+//   that retries fit inside the user's paid window. If we always anchored to
+//   captured_at we'd silently shave off the unused portion of the current
+//   cycle (up to 2 days per renewal, ~24 days/year). For autopay payments
+//   the route attaches the previous premium_until as metadata; we use the
+//   later of (captured_at + 30d) and (prev_premium_until + 30d) so the
+//   user never loses time they already paid for, while still recovering
+//   gracefully if a renewal happens *after* the old period ended.
+function premiumUntilFromPayment(payment: {
+  captured_at?: string;
+  created_at?: string;
+  metadata?: Record<string, string> | null;
+}): string {
   const anchor = payment.captured_at ?? payment.created_at;
-  const base = anchor ? new Date(anchor).getTime() : Date.now();
-  const ms = PREMIUM_PERIOD_DAYS * 24 * 60 * 60 * 1000;
-  return new Date(base + ms).toISOString();
+  const captureBase = anchor ? new Date(anchor).getTime() : Date.now();
+  let base = captureBase;
+
+  const prev = payment.metadata?.prev_premium_until;
+  if (prev) {
+    const prevTs = new Date(prev).getTime();
+    if (Number.isFinite(prevTs) && prevTs > captureBase) {
+      base = prevTs;
+    }
+  }
+
+  return new Date(base + PREMIUM_PERIOD_MS).toISOString();
 }
 
 export async function POST(request: NextRequest) {
