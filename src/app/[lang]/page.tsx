@@ -253,7 +253,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
           <p className="hero-subtitle mt-5 md:mt-7">
             {lang === "ru" ? (
               <>
-                Эксклюзивная музыка для DJ —{" "}
+                Топовая музыка для DJ —{" "}
                 <em>раньше, чем мир услышит.</em>
               </>
             ) : (
