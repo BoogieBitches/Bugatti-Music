@@ -76,9 +76,7 @@ export function TopChartList({ tracks, supabaseUrl }: Props) {
                   </span>
                 )}
               </div>
-              <span className="hidden md:inline text-sm text-[var(--muted)] tabular-nums">
-                {t.plays_count.toLocaleString()} {dict.track.plays.toLowerCase()}
-              </span>
+
             </Link>
           </motion.li>
         );
