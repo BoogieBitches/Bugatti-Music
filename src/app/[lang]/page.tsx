@@ -233,7 +233,6 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
     <div>
       {/* HERO — POOL UP with violet halo background */}
       <section className="hero-violet relative overflow-hidden">
-        <div aria-hidden className="hero-violet-bg" />
         <div aria-hidden className="hero-violet-stars" />
 
         <div className="relative max-w-[1400px] mx-auto px-5 md:px-10 pt-12 md:pt-20 pb-10 md:pb-16">
