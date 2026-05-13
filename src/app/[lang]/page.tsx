@@ -10,6 +10,7 @@ import { Coverflow } from "@/components/Coverflow";
 import { TextReveal } from "@/components/TextReveal";
 import { Marquee } from "@/components/Marquee";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
+import { TopChartList } from "@/components/TopChartList";
 
 export default async function HomePage({ params }: PageProps<"/[lang]">) {
   const { lang } = await params;
@@ -21,11 +22,12 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
   let topTracks: TrackWithGenre[] = [];
   let newTracks: TrackWithGenre[] = [];
   let approvedCount = 0;
+  let topDownloads: TrackWithGenre[] = [];
 
   if (hasSupabaseEnv()) {
     try {
       const supabase = await createSupabaseServerClient();
-      const [{ data: g }, { data: top }, { data: fresh }, { count }] =
+      const [{ data: g }, { data: top }, { data: fresh }, { count }, { data: dl }] =
         await Promise.all([
           supabase.from("genres").select("*").order("position"),
           supabase
@@ -48,11 +50,20 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
             .from("tracks")
             .select("id", { count: "exact", head: true })
             .eq("status", "approved"),
+          supabase
+            .from("tracks")
+            .select(
+              "*, genre:genres(id, slug, name_en, name_ru), uploader:profiles!tracks_uploader_id_fkey(id, full_name, avatar_url)",
+            )
+            .eq("status", "approved")
+            .order("downloads_count", { ascending: false })
+            .limit(10),
         ]);
       genres = (g ?? []) as Genre[];
       topTracks = (top ?? []) as TrackWithGenre[];
       newTracks = (fresh ?? []) as TrackWithGenre[];
       approvedCount = count ?? 0;
+      topDownloads = (dl ?? []) as TrackWithGenre[];
     } catch {
       // ignore — render anonymous home
     }
@@ -741,6 +752,39 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
               );
             })}
           </div>
+        </section>
+      )}
+
+      {/* SECTION 07 — TOP DOWNLOADS */}
+      {topDownloads.length > 0 && (
+        <section className="relative max-w-[1400px] mx-auto px-5 md:px-10 py-20 md:py-28 border-t border-[var(--border)]">
+          <header className="grid md:grid-cols-12 gap-6 md:gap-10 items-end mb-12 md:mb-16">
+            <div className="md:col-span-1 font-display text-5xl md:text-6xl font-bold tabular-nums tracking-tighter text-white/90">
+              07
+            </div>
+            <div className="md:col-span-7">
+              <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-3">
+                {lang === "ru" ? "Топ скачиваний" : "Top downloads"}
+              </div>
+              <h2 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold tracking-tighter leading-[0.95] text-white">
+                <TextReveal
+                  text={lang === "ru" ? "Charts" : "Charts"}
+                  stagger={0.04}
+                  trigger="mount"
+                />
+              </h2>
+            </div>
+            <div className="md:col-span-4 flex md:justify-end">
+              <Link
+                href={`\${lp}/catalog?sort=downloads`}
+                className="group inline-flex items-center gap-2 font-display text-sm font-semibold tracking-[0.18em] uppercase"
+              >
+                <span>{lang === "ru" ? "Весь чарт" : "Full chart"}</span>
+                <span aria-hidden className="inline-block transition-transform group-hover:translate-x-1">→</span>
+              </Link>
+            </div>
+          </header>
+          <TopChartList tracks={topDownloads} supabaseUrl={baseUrl} />
         </section>
       )}
 
