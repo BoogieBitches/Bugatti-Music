@@ -10,7 +10,6 @@ import { Coverflow } from "@/components/Coverflow";
 import { TextReveal } from "@/components/TextReveal";
 import { Marquee } from "@/components/Marquee";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
-import { HeroParticles } from "@/components/HeroParticles";
 
 export default async function HomePage({ params }: PageProps<"/[lang]">) {
   const { lang } = await params;
@@ -238,7 +237,6 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
         <div aria-hidden className="hero-moving-gradient" />
         <div aria-hidden className="hero-violet-stars" />
         <div aria-hidden className="hero-violet-halo" />
-        <HeroParticles />
 
         <div className="relative max-w-[1400px] mx-auto px-5 md:px-10 pt-12 md:pt-20 pb-10 md:pb-16">
           {/* Eyebrow — small editorial label */}
