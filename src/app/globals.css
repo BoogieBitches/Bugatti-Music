@@ -592,7 +592,7 @@ a {
 .hero-violet {
   isolation: isolate;
   background:
-    radial-gradient(140% 90% at 50% 110%, #1c1148 0%, #0c0822 55%, #07051a 100%);
+    radial-gradient(140% 90% at 50% 110%, #09080f 0%, #06050d 55%, #040309 100%);
 }
 .hero-violet-bg {
   position: absolute;
