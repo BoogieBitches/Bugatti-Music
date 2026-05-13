@@ -764,11 +764,11 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
             </div>
             <div className="md:col-span-7">
               <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-3">
-                {lang === "ru" ? "Сейчас качают" : "Trending Now"}
+                {lang === "ru" ? "Сейчас в тренде" : "Top Chart"}
               </div>
               <h2 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold tracking-tighter leading-[0.95] text-white">
                 <TextReveal
-                  text={lang === "ru" ? "Hot" : "Hot"}
+                  text={lang === "ru" ? "Top Chart" : "Top Chart"}
                   stagger={0.04}
                   trigger="mount"
                 />
