@@ -764,11 +764,11 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
             </div>
             <div className="md:col-span-7">
               <div className="text-[11px] tracking-[0.28em] uppercase text-[var(--accent-3)] mb-3">
-                {lang === "ru" ? "Топ скачиваний" : "Top downloads"}
+                {lang === "ru" ? "Сейчас качают" : "Trending Now"}
               </div>
               <h2 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold tracking-tighter leading-[0.95] text-white">
                 <TextReveal
-                  text={lang === "ru" ? "Charts" : "Charts"}
+                  text={lang === "ru" ? "Hot" : "Hot"}
                   stagger={0.04}
                   trigger="mount"
                 />
@@ -779,7 +779,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                 href={`\${lp}/catalog?sort=downloads`}
                 className="group inline-flex items-center gap-2 font-display text-sm font-semibold tracking-[0.18em] uppercase"
               >
-                <span>{lang === "ru" ? "Весь чарт" : "Full chart"}</span>
+                <span>{lang === "ru" ? "Смотреть всё" : "View all"}</span>
                 <span aria-hidden className="inline-block transition-transform group-hover:translate-x-1">→</span>
               </Link>
             </div>
