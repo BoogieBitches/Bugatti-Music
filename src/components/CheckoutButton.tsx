@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Script from "next/script";
 import { useState } from "react";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { Locale } from "@/i18n/config";
@@ -10,16 +11,43 @@ interface Props {
   dict: Dictionary;
   isLoggedIn: boolean;
   isPremium: boolean;
-  yookassaReady: boolean;
+  cloudpaymentsReady: boolean;
 }
 
-export function CheckoutButton({ locale, dict, isLoggedIn, isPremium, yookassaReady }: Props) {
+declare global {
+  interface Window {
+    cp?: {
+      CloudPayments: new () => {
+        pay: (
+          action: "charge" | "auth",
+          options: Record<string, unknown>,
+          callbacks: {
+            onSuccess?: (options: unknown) => void;
+            onFail?: (reason: string, options: unknown) => void;
+            onComplete?: (paymentResult: unknown, options: unknown) => void;
+          },
+        ) => void;
+      };
+    };
+  }
+}
+
+export function CheckoutButton({
+  locale,
+  dict,
+  isLoggedIn,
+  isPremium,
+  cloudpaymentsReady,
+}: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!isLoggedIn) {
     return (
-      <Link href={`/${locale}/login?next=/${locale}/pricing`} className="bs-button bs-button-primary w-full">
+      <Link
+        href={`/${locale}/login?next=/${locale}/pricing`}
+        className="bs-button bs-button-primary w-full"
+      >
         {dict.nav.login}
       </Link>
     );
@@ -27,30 +55,16 @@ export function CheckoutButton({ locale, dict, isLoggedIn, isPremium, yookassaRe
 
   if (isPremium) {
     return (
-      <button
-        onClick={async () => {
-          setLoading(true);
-          try {
-            const res = await fetch("/api/yookassa/portal", { method: "POST" });
-            const j = await res.json();
-            if (j.url) window.location.href = j.url;
-            else alert(j.error ?? "Failed");
-          } finally {
-            setLoading(false);
-          }
-        }}
-        className="bs-button w-full"
-        disabled={loading}
-      >
-        {loading ? dict.common.loading : dict.dashboard.subscription.manage}
-      </button>
+      <Link href={`/${locale}/dashboard`} className="bs-button w-full">
+        {dict.dashboard.subscription.manage}
+      </Link>
     );
   }
 
-  if (!yookassaReady) {
+  if (!cloudpaymentsReady) {
     return (
       <div className="bs-button w-full opacity-60 pointer-events-none">
-        ЮKassa not configured
+        CloudPayments not configured
       </div>
     );
   }
@@ -59,27 +73,79 @@ export function CheckoutButton({ locale, dict, isLoggedIn, isPremium, yookassaRe
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch("/api/yookassa/checkout", {
+      const res = await fetch("/api/cloudpayments/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ locale }),
       });
-      const j = await res.json();
-      if (j.url) window.location.href = j.url;
-      else throw new Error(j.error ?? "Failed");
+      const data = await res.json();
+      if (!res.ok || !data.publicId) throw new Error(data.error ?? "Failed");
+
+      const widget = new window.cp!.CloudPayments();
+      widget.pay(
+        "charge",
+        {
+          publicId: data.publicId,
+          description: data.description,
+          amount: data.amount,
+          currency: data.currency,
+          accountId: data.accountId,
+          email: data.email ?? undefined,
+          requireEmail: false,
+          skin: "mini",
+          autoClose: 3,
+          data: {
+            CloudPayments: {
+              CustomerReceipt: {
+                Items: [
+                  {
+                    label: data.description,
+                    price: data.amount,
+                    quantity: 1,
+                    amount: data.amount,
+                    vat: null,
+                    method: 0,
+                    object: 0,
+                  },
+                ],
+                taxationSystem: 0,
+                email: data.email ?? "",
+              },
+            },
+          },
+        },
+        {
+          onSuccess: () => {
+            window.location.href = `/${locale}/dashboard?checkout=processing`;
+          },
+          onFail: (_reason: string) => {
+            setError(dict.common.error ?? "Платёж не прошёл. Попробуйте ещё раз.");
+            setLoading(false);
+          },
+        },
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
-    } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div>
-      <button onClick={handle} disabled={loading} className="bs-button bs-button-primary w-full">
-        {loading ? dict.common.loading : dict.pricing.premium.cta}
-      </button>
-      {error && <div className="text-xs text-red-300 mt-2">{error}</div>}
-    </div>
+    <>
+      <Script
+        src="https://widget.cloudpayments.ru/bundles/cloudpayments.js"
+        strategy="lazyOnload"
+      />
+      <div>
+        <button
+          onClick={handle}
+          disabled={loading}
+          className="bs-button bs-button-primary w-full"
+        >
+          {loading ? dict.common.loading : dict.pricing.premium.cta}
+        </button>
+        {error && <div className="text-xs text-red-300 mt-2">{error}</div>}
+      </div>
+    </>
   );
 }
