@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "path": "/api/yookassa/autopay",
+      "path": "/api/cloudpayments/autopay",
       "schedule": "0 3 * * *"
     }
   ]
