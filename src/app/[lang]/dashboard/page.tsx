@@ -55,7 +55,7 @@ export default async function DashboardPage({ params }: PageProps<"/[lang]/dashb
           {isPremium ? (
             <ManageSubscriptionButton
               dict={dict}
-              hasSavedCard={!!profile?.yookassa_payment_method_id}
+              hasSavedCard={!!profile?.cloudpayments_token}
             />
           ) : (
             <Link href={`/${lang}/pricing`} className="bs-button bs-button-primary">
