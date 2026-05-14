@@ -19,8 +19,10 @@ export const env = {
   supabaseServiceRoleKey: () =>
     required("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY),
 
-  yookassaShopId: () => required("YOOKASSA_SHOP_ID", process.env.YOOKASSA_SHOP_ID),
-  yookassaSecretKey: () => required("YOOKASSA_SECRET_KEY", process.env.YOOKASSA_SECRET_KEY),
+  cloudpaymentsPublicId: () =>
+    required("CLOUDPAYMENTS_PUBLIC_ID", process.env.CLOUDPAYMENTS_PUBLIC_ID),
+  cloudpaymentsSecretKey: () =>
+    required("CLOUDPAYMENTS_SECRET_KEY", process.env.CLOUDPAYMENTS_SECRET_KEY),
 
   appUrl: () => {
     if (process.env.NEXT_PUBLIC_APP_URL && process.env.NEXT_PUBLIC_APP_URL.length > 0) {
@@ -33,7 +35,6 @@ export const env = {
   },
 
   // Optional: comma-separated list of emails to auto-promote to admin on first login.
-  // (Only the FIRST signup that matches one of these emails becomes admin via /api/admin/bootstrap.)
   adminEmails: () =>
     (process.env.ADMIN_EMAILS ?? "")
       .split(",")
@@ -45,6 +46,6 @@ export function hasSupabaseEnv(): boolean {
   return !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 }
 
-export function hasYookassaEnv(): boolean {
-  return !!process.env.YOOKASSA_SHOP_ID && !!process.env.YOOKASSA_SECRET_KEY;
+export function hasCloudpaymentsEnv(): boolean {
+  return !!process.env.CLOUDPAYMENTS_PUBLIC_ID && !!process.env.CLOUDPAYMENTS_SECRET_KEY;
 }
