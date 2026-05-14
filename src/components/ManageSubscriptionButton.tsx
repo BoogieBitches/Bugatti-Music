@@ -14,9 +14,6 @@ interface Props {
  * and a self-service "Unbind card" button that stops the daily autopay
  * cron from charging the user again. Premium access stays until
  * premium_until passes naturally.
- *
- * Required by ЮKassa for recurring-payments approval — the user must be
- * able to remove the saved card without contacting support.
  */
 export function ManageSubscriptionButton({ dict, hasSavedCard }: Props) {
   const router = useRouter();
@@ -26,16 +23,14 @@ export function ManageSubscriptionButton({ dict, hasSavedCard }: Props) {
   const s = dict.dashboard.subscription;
 
   if (!hasSavedCard) {
-    return (
-      <p className="text-sm text-[var(--muted)]">{s.noCard}</p>
-    );
+    return <p className="text-sm text-[var(--muted)]">{s.noCard}</p>;
   }
 
   async function unbind() {
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch("/api/yookassa/portal", { method: "POST" });
+      const res = await fetch("/api/cloudpayments/portal", { method: "POST" });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error ?? "Failed");
       setConfirmOpen(false);
