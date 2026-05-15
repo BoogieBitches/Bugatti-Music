@@ -199,7 +199,9 @@
     "approve": "Одобрить",
     "reject": "Отклонить",
     "rejectReasonPlaceholder": "Причина (необязательно)",
-    "noPending": "Нет треков на модерации."
+    "noPending": "Нет треков на модерации.",
+    "deleteConfirm": "Удалить трек безвозвратно? Файлы также будут удалены.",
+    "deleteConfirmYes": "Да, удалить"
   },
   "pricing": {
     "title": "Тарифы",
