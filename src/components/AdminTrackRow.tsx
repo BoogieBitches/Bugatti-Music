@@ -21,8 +21,9 @@ export function AdminTrackRow({ track, previewUrl, imageUrl, videoUrl, dict, mod
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  async function moderate(action: "approve" | "reject" | "unapprove") {
+  async function moderate(action: "approve" | "reject" | "unapprove" | "delete") {
     setError(null);
     setLoading(true);
     try {
@@ -37,6 +38,7 @@ export function AdminTrackRow({ track, previewUrl, imageUrl, videoUrl, dict, mod
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error ?? "Failed");
+      setConfirmDelete(false);
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
@@ -71,7 +73,33 @@ export function AdminTrackRow({ track, previewUrl, imageUrl, videoUrl, dict, mod
           />
         )}
         {error && <div className="text-xs text-red-300 mt-2">{error}</div>}
+
+        {/* Delete confirmation inline */}
+        {confirmDelete && (
+          <div className="mt-3 rounded-xl border border-red-500/30 bg-red-950/20 p-3">
+            <p className="text-sm text-red-300 mb-2">{dict.admin.deleteConfirm}</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => moderate("delete")}
+                className="bs-button text-red-400 border-red-500/40 hover:bg-red-500/10"
+              >
+                {loading ? dict.common.loading : dict.admin.deleteConfirmYes}
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => setConfirmDelete(false)}
+                className="bs-button bs-button-ghost"
+              >
+                {dict.common.cancel}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
       <div className="flex flex-col gap-2 md:items-end">
         {mode === "pending" ? (
           <>
@@ -97,6 +125,16 @@ export function AdminTrackRow({ track, previewUrl, imageUrl, videoUrl, dict, mod
             className="bs-button"
           >
             {dict.admin.reject}
+          </button>
+        )}
+        {/* Delete button always visible for admin */}
+        {!confirmDelete && (
+          <button
+            disabled={loading}
+            onClick={() => setConfirmDelete(true)}
+            className="bs-button text-red-400 border-red-500/30 hover:bg-red-500/10"
+          >
+            {dict.common.delete}
           </button>
         )}
       </div>
