@@ -141,7 +141,8 @@
     "downloadFull": "Скачать полный трек",
     "downloadPreview": "Скачать превью",
     "premiumGate": "Нужна Premium-подписка",
-    "loginToDownload": "Войдите, чтобы скачать"
+    "loginToDownload": "Войдите, чтобы скачать",
+    "camelotKey": "Camelot"
   },
   "upload": {
     "title": "Загрузить трек",
@@ -198,9 +199,7 @@
     "approve": "Одобрить",
     "reject": "Отклонить",
     "rejectReasonPlaceholder": "Причина (необязательно)",
-    "noPending": "Нет треков на модерации.",
-    "deleteConfirm": "Удалить трек насовсем? Файлы тоже будут удалены из хранилища. Это действие необратимо.",
-    "deleteConfirmYes": "Да, удалить"
+    "noPending": "Нет треков на модерации."
   },
   "pricing": {
     "title": "Тарифы",
