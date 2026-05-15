@@ -141,7 +141,8 @@
     "downloadFull": "Download full track",
     "downloadPreview": "Download preview",
     "premiumGate": "Premium subscription required",
-    "loginToDownload": "Sign in to download"
+    "loginToDownload": "Sign in to download",
+    "camelotKey": "Camelot"
   },
   "upload": {
     "title": "Upload a track",
@@ -198,9 +199,7 @@
     "approve": "Approve",
     "reject": "Reject",
     "rejectReasonPlaceholder": "Reason (optional)",
-    "noPending": "Nothing waiting for review.",
-    "deleteConfirm": "Permanently delete this track? Storage files will also be removed. This cannot be undone.",
-    "deleteConfirmYes": "Yes, delete"
+    "noPending": "Nothing waiting for review."
   },
   "pricing": {
     "title": "Pricing",
