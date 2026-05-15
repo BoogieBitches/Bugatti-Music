@@ -8,6 +8,7 @@ import { TrackPagePlayer } from "@/components/player/TrackPagePlayer";
 import { DownloadButton } from "@/components/DownloadButton";
 import type { TrackWithGenre } from "@/types/db";
 import { formatDuration } from "@/lib/utils";
+import { camelotColor } from "@/lib/camelot";
 
 export default async function TrackPage({ params }: PageProps<"/[lang]/track/[id]">) {
   const { lang, id } = await params;
@@ -24,9 +25,8 @@ export default async function TrackPage({ params }: PageProps<"/[lang]/track/[id
     .eq("id", id)
     .maybeSingle();
   if (!data) notFound();
-  const track = data as TrackWithGenre;
+  const track = data as TrackWithGenre & { camelot_key?: string | null };
 
-  // Visibility: approved → public; pending/rejected → uploader or admin only.
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -63,6 +63,8 @@ export default async function TrackPage({ params }: PageProps<"/[lang]/track/[id
       : track.genre.name_en
     : null;
 
+  const ck = track.camelot_key ?? null;
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-10 grid md:grid-cols-[280px_1fr] gap-8 items-start">
       <CoverMedia imageUrl={imageUrl} videoUrl={videoUrl} alt={track.title} size="lg" />
@@ -79,7 +81,21 @@ export default async function TrackPage({ params }: PageProps<"/[lang]/track/[id
 
         <dl className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
           <Stat label={dict.track.bpm} value={track.bpm?.toString() ?? "—"} />
-          <Stat label={dict.track.key} value={track.music_key ?? "—"} />
+          {ck ? (
+            <div className="bs-card p-3" style={{ borderColor: `${camelotColor(ck)}44` }}>
+              <div className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
+                {dict.track.camelotKey}
+              </div>
+              <div
+                className="font-bold mt-0.5 font-mono text-lg"
+                style={{ color: camelotColor(ck) }}
+              >
+                {ck}
+              </div>
+            </div>
+          ) : (
+            <Stat label={dict.track.key} value={track.music_key ?? "—"} />
+          )}
           <Stat label={dict.track.duration} value={formatDuration(track.duration_seconds)} />
           <Stat label={dict.track.plays} value={track.plays_count.toString()} />
         </dl>
