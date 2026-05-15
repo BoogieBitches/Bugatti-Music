@@ -82,7 +82,7 @@ function PrivacyRu() {
         </li>
         <li>
           <strong>Платёжные</strong>: данные о подписке (план, статус, даты). Номера карт мы
-          не храним — их обрабатывает ЮKassa.
+          не храним — их обрабатывает CloudPayments.
         </li>
         <li>
           <strong>Технические</strong>: IP, user-agent браузера, базовая информация о сессии для
@@ -98,7 +98,7 @@ function PrivacyRu() {
       <ul className="list-disc pl-6 space-y-2">
         <li>Чтобы предоставить вам сам Сервис (каталог, подписка, загрузка).</li>
         <li>
-          Чтобы принимать платежи и подтверждать статус Premium (через ЮKassa).
+          Чтобы принимать платежи и подтверждать статус Premium (через CloudPayments).
         </li>
         <li>
           Чтобы отправлять транзакционные письма: подтверждение регистрации, сброс пароля,
@@ -120,8 +120,8 @@ function PrivacyRu() {
           файлов). Серверы находятся в ЕС.
         </li>
         <li>
-          <strong>ЮKassa</strong> (платежи, ООО НКО «ЮМани», Россия). Номера карт и
-          детали платежей хранятся у ЮKassa согласно их политике.
+          <strong>CloudPayments</strong> (платежи, ООО «Клаудпейментс», Россия). Номера карт и
+          детали платежей хранятся у CloudPayments согласно их политике.
         </li>
         <li>
           <strong>Resend</strong> (отправка email). Получает ваш email и тему/содержимое письма.
@@ -168,7 +168,7 @@ function PrivacyRu() {
 
       <H2>9. Международная передача</H2>
       <p>
-        Данные могут обрабатываться в России (ЮKassa, согласно 152-ФЗ), ЕС (Supabase) и США (Vercel,
+        Данные могут обрабатываться в России (CloudPayments, согласно 152-ФЗ), ЕС (Supabase) и США (Vercel,
         Resend, Google). Все поставщики прошли аудит безопасности и соответствуют GDPR.
       </p>
 
@@ -210,7 +210,7 @@ function PrivacyEn() {
         </li>
         <li>
           <strong>Billing</strong>: subscription details (plan, status, dates). We do NOT store
-          card numbers — ЮKassa handles all card data.
+          card numbers — CloudPayments handles all card data.
         </li>
         <li>
           <strong>Technical</strong>: IP address, browser user-agent, minimal session info to
@@ -225,7 +225,7 @@ function PrivacyEn() {
       <H2>3. Why we process it</H2>
       <ul className="list-disc pl-6 space-y-2">
         <li>To provide the Service (catalog, subscription, uploads).</li>
-        <li>To process payments and confirm Premium status (via ЮKassa).</li>
+        <li>To process payments and confirm Premium status (via CloudPayments).</li>
         <li>
           To send transactional email: sign-up confirmation, password reset, upload moderation
           status, payment receipts (via Resend).
@@ -243,8 +243,8 @@ function PrivacyEn() {
           <strong>Supabase</strong> (auth, database, file storage). Servers in the EU.
         </li>
         <li>
-          <strong>ЮKassa</strong> (payments, YooMoney NBCO LLC, Russia). Card details and
-          payment records live with ЮKassa per their policy.
+          <strong>CloudPayments</strong> (payments, CloudPayments LLC, Russia). Card details and
+          payment records live with CloudPayments per their policy.
         </li>
         <li>
           <strong>Resend</strong> (email delivery). Receives your email address and message contents.
@@ -292,7 +292,7 @@ function PrivacyEn() {
 
       <H2>9. International transfers</H2>
       <p>
-        Data may be processed in Russia (ЮKassa, under 152-FZ), the EU (Supabase) and the USA
+        Data may be processed in Russia (CloudPayments, under 152-FZ), the EU (Supabase) and the USA
         (Vercel, Resend, Google). All processors have been vetted and are GDPR-compliant.
       </p>
 
