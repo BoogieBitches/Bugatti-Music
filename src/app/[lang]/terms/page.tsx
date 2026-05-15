@@ -92,8 +92,8 @@ function TermsRu({ lp }: { lp: string }) {
       <p>
         Premium — платная подписка за 499 ₽ в месяц. Premium даёт право скачивать
         полные версии одобренных треков без ограничений в течение срока подписки. Оплата
-        списывается автоматически каждый месяц через платёжную систему ЮKassa (ООО НКО «ЮМани»,
-        Россия).
+        списывается автоматически каждый месяц через платёжную систему CloudPayments
+        (ООО «Клаудпейментс», Россия).
       </p>
       <p>
         Вы можете отменить подписку в любой момент в разделе «Кабинет». После отмены доступ к
@@ -199,7 +199,7 @@ function TermsEn({ lp }: { lp: string }) {
       <p>
         Premium is a paid subscription at 499 ₽ per month. Premium grants unlimited downloads
         of approved full-length tracks during the subscription period. Payments are processed
-        automatically each month via ЮKassa (YooMoney NBCO LLC, Russia).
+        automatically each month via CloudPayments (CloudPayments LLC, Russia).
       </p>
       <p>
         You may cancel anytime from your Dashboard. After cancellation, Premium access remains
