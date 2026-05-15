@@ -199,7 +199,9 @@
     "approve": "Approve",
     "reject": "Reject",
     "rejectReasonPlaceholder": "Reason (optional)",
-    "noPending": "Nothing waiting for review."
+    "noPending": "Nothing waiting for review.",
+    "deleteConfirm": "Delete this track permanently? All files will also be removed.",
+    "deleteConfirmYes": "Yes, delete"
   },
   "pricing": {
     "title": "Pricing",
