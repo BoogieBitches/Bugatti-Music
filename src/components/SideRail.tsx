@@ -84,8 +84,6 @@ export function SideRail({
     : [];
 
   const isActive = (item: RailItem & { match?: CatalogMatch }) => {
-    // Anchor-only links (e.g. "/ru#trending") are never shown as the active
-    // section — they're scroll shortcuts, not standalone routes.
     if (item.href.includes("#")) return false;
     const cleanHref = item.href.split("?")[0];
     if (item.exact) return pathname === cleanHref;
@@ -93,7 +91,6 @@ export function SideRail({
       pathname === cleanHref || pathname.startsWith(`${cleanHref}/`);
     if (!pathMatches) return false;
     if (!item.match) return true;
-    // Catalog variants share the same path; disambiguate by query params.
     for (const [key, expected] of Object.entries(item.match)) {
       const actual = searchParams.get(key);
       if (expected === null) {
@@ -106,96 +103,134 @@ export function SideRail({
   };
 
   return (
-    <aside
-      className="fixed left-0 top-0 z-40 hidden md:flex flex-col h-screen transition-[width] duration-300 ease-out bg-[rgba(12,8,28,0.94)] backdrop-blur-xl border-r border-[rgba(122,85,255,0.12)] overflow-visible"
-      style={{ width: expanded ? 224 : 56 }}
-      aria-label={dict.nav.primaryNav}
-    >
-      {/* Toggle chevron — sits on the rail's right edge */}
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        aria-label={expanded ? dict.nav.collapseNav : dict.nav.expandNav}
-        aria-expanded={expanded}
-        className="absolute -right-3 top-[64px] z-10 flex items-center justify-center w-6 h-6 rounded-full bg-[rgba(20,22,28,0.96)] border border-white/10 text-white/70 hover:text-white hover:bg-[var(--accent)] hover:border-[var(--accent)] transition-colors shadow-[0_2px_10px_rgba(0,0,0,0.5)]"
+    <>
+      {/* Custom tooltip styles injected once */}
+      <style>{`
+        .rail-link-tooltip {
+          pointer-events: none;
+          position: absolute;
+          left: calc(100% + 10px);
+          top: 50%;
+          transform: translateY(-50%) translateX(-6px);
+          white-space: nowrap;
+          background: rgba(20,16,40,0.97);
+          border: 1px solid rgba(122,85,255,0.25);
+          color: #fff;
+          font-size: 13px;
+          font-weight: 600;
+          padding: 5px 11px;
+          border-radius: 8px;
+          box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+          opacity: 0;
+          transition: opacity 0.15s ease, transform 0.15s ease;
+          z-index: 9999;
+        }
+        .rail-link-tooltip::before {
+          content: "";
+          position: absolute;
+          right: 100%;
+          top: 50%;
+          transform: translateY(-50%);
+          border: 5px solid transparent;
+          border-right-color: rgba(122,85,255,0.25);
+        }
+        .rail-link-collapsed:hover .rail-link-tooltip {
+          opacity: 1;
+          transform: translateY(-50%) translateX(0);
+        }
+      `}</style>
+
+      <aside
+        className="fixed left-0 top-0 z-40 hidden md:flex flex-col h-screen transition-[width] duration-300 ease-out bg-[rgba(12,8,28,0.94)] backdrop-blur-xl border-r border-[rgba(122,85,255,0.12)] overflow-visible"
+        style={{ width: expanded ? 224 : 56 }}
+        aria-label={dict.nav.primaryNav}
       >
-        <ChevronRight
-          className="w-4 h-4 transition-transform duration-300"
-          style={{ transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}
-        />
-      </button>
-
-      {/* Brand */}
-      <Link
-        href={lp}
-        className="flex items-center gap-3 h-20 px-3 shrink-0 border-b border-white/[0.04] overflow-hidden"
-      >
-        <span className="relative inline-block w-9 h-9 rounded-lg overflow-hidden ring-1 ring-white/10 shrink-0">
-          <Image
-            src="/bugatti-logo.png"
-            alt="Bugatti Sound"
-            fill
-            sizes="36px"
-            className="object-contain"
-            priority
-          />
-        </span>
-        <span
-          className="bs-fire-glow leading-none text-[18px] tracking-[0.01em] whitespace-nowrap transition-opacity duration-200"
-          style={{ opacity: expanded ? 1 : 0 }}
-          data-text="Bugatti Sound"
+        {/* Toggle chevron */}
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-label={expanded ? dict.nav.collapseNav : dict.nav.expandNav}
+          aria-expanded={expanded}
+          className="absolute -right-3 top-[64px] z-10 flex items-center justify-center w-6 h-6 rounded-full bg-[rgba(20,22,28,0.96)] border border-white/10 text-white/70 hover:text-white hover:bg-[var(--accent)] hover:border-[var(--accent)] transition-colors shadow-[0_2px_10px_rgba(0,0,0,0.5)]"
         >
-          <span className="bs-fire">Bugatti Sound</span>
-        </span>
-      </Link>
-
-      {/* Main nav */}
-      <nav className="flex-1 px-2 py-4 flex flex-col gap-1 overflow-y-auto overflow-x-hidden">
-        {main.map((item) => (
-          <RailLink
-            key={item.href}
-            item={item}
-            active={isActive(item)}
-            expanded={expanded}
+          <ChevronRight
+            className="w-4 h-4 transition-transform duration-300"
+            style={{ transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}
           />
-        ))}
+        </button>
 
-        <div className="my-2 h-px bg-white/[0.05]" />
-
-        {userItems.map((item) => (
-          <RailLink
-            key={item.href}
-            item={item}
-            active={isActive(item)}
-            expanded={expanded}
-          />
-        ))}
-
-        {adminItems.length > 0 && (
-          <>
-            <div className="my-2 h-px bg-white/[0.05]" />
-            {adminItems.map((item) => (
-              <RailLink
-                key={item.href}
-                item={item}
-                active={isActive(item)}
-                expanded={expanded}
-              />
-            ))}
-          </>
-        )}
-      </nav>
-
-      {/* Footer label */}
-      <div className="px-4 py-3 border-t border-white/[0.04] text-[10px] font-bold tracking-[0.3em] text-white/30 whitespace-nowrap overflow-hidden">
-        <span
-          className="inline-block transition-opacity duration-200"
-          style={{ opacity: expanded ? 0.85 : 0.3 }}
+        {/* Brand */}
+        <Link
+          href={lp}
+          className="flex items-center gap-3 h-20 px-3 shrink-0 border-b border-white/[0.04] overflow-hidden"
         >
-          v1
-        </span>
-      </div>
-    </aside>
+          <span className="relative inline-block w-9 h-9 rounded-lg overflow-hidden ring-1 ring-white/10 shrink-0">
+            <Image
+              src="/bugatti-logo.png"
+              alt="Bugatti Sound"
+              fill
+              sizes="36px"
+              className="object-contain"
+              priority
+            />
+          </span>
+          <span
+            className="bs-fire-glow leading-none text-[18px] tracking-[0.01em] whitespace-nowrap transition-opacity duration-200"
+            style={{ opacity: expanded ? 1 : 0 }}
+            data-text="Bugatti Sound"
+          >
+            <span className="bs-fire">Bugatti Sound</span>
+          </span>
+        </Link>
+
+        {/* Main nav */}
+        <nav className="flex-1 px-2 py-4 flex flex-col gap-1 overflow-y-auto overflow-x-hidden">
+          {main.map((item) => (
+            <RailLink
+              key={item.href}
+              item={item}
+              active={isActive(item)}
+              expanded={expanded}
+            />
+          ))}
+
+          <div className="my-2 h-px bg-white/[0.05]" />
+
+          {userItems.map((item) => (
+            <RailLink
+              key={item.href}
+              item={item}
+              active={isActive(item)}
+              expanded={expanded}
+            />
+          ))}
+
+          {adminItems.length > 0 && (
+            <>
+              <div className="my-2 h-px bg-white/[0.05]" />
+              {adminItems.map((item) => (
+                <RailLink
+                  key={item.href}
+                  item={item}
+                  active={isActive(item)}
+                  expanded={expanded}
+                />
+              ))}
+            </>
+          )}
+        </nav>
+
+        {/* Footer label */}
+        <div className="px-4 py-3 border-t border-white/[0.04] text-[10px] font-bold tracking-[0.3em] text-white/30 whitespace-nowrap overflow-hidden">
+          <span
+            className="inline-block transition-opacity duration-200"
+            style={{ opacity: expanded ? 0.85 : 0.3 }}
+          >
+            v1
+          </span>
+        </div>
+      </aside>
+    </>
   );
 }
 
@@ -212,8 +247,9 @@ function RailLink({
   return (
     <Link
       href={item.href}
-      title={expanded ? undefined : item.label}
       className={`relative flex items-center gap-3 h-10 rounded-lg pl-[12px] pr-2 text-[14px] font-semibold transition-colors ${
+        expanded ? "" : "rail-link-collapsed"
+      } ${
         active
           ? "text-white bg-[rgba(122,85,255,0.14)]"
           : "text-[rgba(220,210,255,0.7)] hover:text-white hover:bg-[rgba(122,85,255,0.10)]"
@@ -234,12 +270,17 @@ function RailLink({
         className="w-[18px] h-[18px] shrink-0"
         style={{ color: active ? "var(--accent-2)" : undefined }}
       />
+      {/* Label — visible when expanded */}
       <span
         className="whitespace-nowrap transition-opacity duration-200"
-        style={{ opacity: expanded ? 1 : 0 }}
+        style={{ opacity: expanded ? 1 : 0, pointerEvents: "none" }}
       >
         {item.label}
       </span>
+      {/* Tooltip — visible on hover when collapsed */}
+      {!expanded && (
+        <span className="rail-link-tooltip">{item.label}</span>
+      )}
     </Link>
   );
 }
