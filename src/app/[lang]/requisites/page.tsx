@@ -81,16 +81,16 @@ export default async function RequisitesPage({
           label={isRu ? "Платёжный провайдер" : "Payment provider"}
           value={
             isRu
-              ? "ООО НКО «ЮМани» (ЮKassa), Россия"
-              : "YooMoney NBCO LLC (ЮKassa), Russia"
+              ? "ООО «Клаудпейментс» (CloudPayments), Россия"
+              : "CloudPayments LLC (CloudPayments), Russia"
           }
         />
       </div>
 
       <p className="mt-10 text-sm text-[var(--muted)]">
         {isRu
-          ? "Данные приведены в соответствии с требованиями ФЗ-54 «О применении контрольно-кассовой техники» и условиями приёма платежей через ЮKassa для самозанятых."
-          : "These details are provided in compliance with Russian Federal Law 54-FZ on cash registers and ЮKassa requirements for self-employed merchants."}
+          ? "Данные приведены в соответствии с требованиями ФЗ-54 «О применении контрольно-кассовой техники» и условиями приёма платежей через CloudPayments для самозанятых."
+          : "These details are provided in compliance with Russian Federal Law 54-FZ on cash registers and CloudPayments requirements for self-employed merchants."}
       </p>
 
       <div className="mt-14 pt-8 border-t border-[var(--border)] text-sm text-[var(--muted)]">
