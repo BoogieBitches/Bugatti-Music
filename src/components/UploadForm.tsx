@@ -7,6 +7,7 @@ import { buildPreviewFromAudioFile } from "@/lib/audioPreview";
 import type { Genre } from "@/types/db";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { Locale } from "@/i18n/config";
+import { CAMELOT_KEYS, camelotColor } from "@/lib/camelot";
 
 interface Props {
   locale: Locale;
@@ -27,6 +28,7 @@ export function UploadForm({ locale, dict, genres, userId }: Props) {
   const [style, setStyle] = useState("");
   const [bpm, setBpm] = useState("");
   const [musicKey, setMusicKey] = useState("");
+  const [camelotKey, setCamelotKey] = useState("");
   const [description, setDescription] = useState("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [coverImage, setCoverImage] = useState<File | null>(null);
@@ -74,9 +76,6 @@ export function UploadForm({ locale, dict, genres, userId }: Props) {
         if (error) throw error;
         previewPath = candidatePath;
       } catch (previewErr) {
-        // Non-fatal: if the browser can't decode the audio (e.g. exotic
-        // codec) or the upload fails, we still publish the track — admin
-        // or moderator can regenerate later.
         previewPath = null;
         console.warn("Auto preview failed:", previewErr);
       }
@@ -112,6 +111,7 @@ export function UploadForm({ locale, dict, genres, userId }: Props) {
         style: style.trim() || null,
         bpm: bpm ? Number(bpm) : null,
         music_key: musicKey.trim() || null,
+        camelot_key: camelotKey || null,
         audio_path: audioPath,
         preview_path: previewPath,
         cover_image_path: coverImagePath,
@@ -185,8 +185,27 @@ export function UploadForm({ locale, dict, genres, userId }: Props) {
             onChange={(e) => setBpm(e.target.value)}
           />
         </Field>
+        <Field label={dict.track.camelotKey}>
+          <select
+            className="bs-input"
+            value={camelotKey}
+            onChange={(e) => setCamelotKey(e.target.value)}
+          >
+            <option value="">—</option>
+            {CAMELOT_KEYS.map((k) => (
+              <option key={k} value={k} style={{ color: camelotColor(k) }}>
+                {k}
+              </option>
+            ))}
+          </select>
+        </Field>
         <Field label={dict.upload.key}>
-          <input className="bs-input" value={musicKey} onChange={(e) => setMusicKey(e.target.value)} />
+          <input
+            className="bs-input"
+            placeholder={locale === "ru" ? "напр. Cm, F#" : "e.g. Cm, F#"}
+            value={musicKey}
+            onChange={(e) => setMusicKey(e.target.value)}
+          />
         </Field>
       </div>
 
