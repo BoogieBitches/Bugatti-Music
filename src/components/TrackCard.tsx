@@ -10,6 +10,7 @@ import { CoverMedia } from "./CoverMedia";
 import { PlayButton } from "./player/PlayButton";
 import { usePlayer } from "./player/PlayerStore";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { camelotColor } from "@/lib/camelot";
 
 interface Props {
   track: TrackWithGenre;
@@ -64,6 +65,8 @@ export function TrackCard({ track, previewUrl, imageUrl, videoUrl }: Props) {
     });
   }, [registerFirstPlayCallback, track.id]);
 
+  const ck = (track as Record<string, unknown>).camelot_key as string | null | undefined;
+
   return (
     <motion.article
       ref={cardRef}
@@ -94,7 +97,20 @@ export function TrackCard({ track, previewUrl, imageUrl, videoUrl }: Props) {
               {track.bpm} {dict.track.bpm}
             </span>
           )}
-          {track.music_key && <span className="bs-badge">{track.music_key}</span>}
+          {ck && (
+            <span
+              className="bs-badge font-mono font-semibold"
+              style={{
+                background: `${camelotColor(ck)}22`,
+                color: camelotColor(ck),
+                borderColor: `${camelotColor(ck)}55`,
+              }}
+              title={dict.track.camelotKey}
+            >
+              {ck}
+            </span>
+          )}
+          {!ck && track.music_key && <span className="bs-badge">{track.music_key}</span>}
           {track.is_premium_only && (
             <span className="bs-badge bs-badge-premium">{dict.common.premiumBadge}</span>
           )}
