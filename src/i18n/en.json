@@ -51,10 +51,22 @@
     "features": {
       "title": "Everything a modern pool needs",
       "items": [
-        { "title": "Curated catalog", "body": "Hip-Hop, House, EDM, Reggaeton, Phonk and more — all moderated." },
-        { "title": "Crystal-clear previews", "body": "Listen to 30-second previews on any device, no signup required." },
-        { "title": "Premium downloads", "body": "Subscribe once, download every approved track in full quality." },
-        { "title": "Animated covers", "body": "Upload looping video or animated artwork — your tracks pop on every screen." }
+        {
+          "title": "Curated catalog",
+          "body": "Hip-Hop, House, EDM, Reggaeton, Phonk and more — all moderated."
+        },
+        {
+          "title": "Crystal-clear previews",
+          "body": "Listen to 30-second previews on any device, no signup required."
+        },
+        {
+          "title": "Premium downloads",
+          "body": "Subscribe once, download every approved track in full quality."
+        },
+        {
+          "title": "Animated covers",
+          "body": "Upload looping video or animated artwork — your tracks pop on every screen."
+        }
       ]
     }
   },
@@ -186,7 +198,9 @@
     "approve": "Approve",
     "reject": "Reject",
     "rejectReasonPlaceholder": "Reason (optional)",
-    "noPending": "Nothing waiting for review."
+    "noPending": "Nothing waiting for review.",
+    "deleteConfirm": "Permanently delete this track? Storage files will also be removed. This cannot be undone.",
+    "deleteConfirmYes": "Yes, delete"
   },
   "pricing": {
     "title": "Pricing",
@@ -194,13 +208,22 @@
     "free": {
       "name": "Free",
       "price": "$0",
-      "features": ["Browse the full catalog", "30-second previews on every track", "Submit your own tracks"]
+      "features": [
+        "Browse the full catalog",
+        "30-second previews on every track",
+        "Submit your own tracks"
+      ]
     },
     "premium": {
       "name": "Premium",
       "price": "499 ₽",
       "period": "/ month",
-      "features": ["Unlimited full-quality downloads", "Early access to new uploads", "No ads, no limits", "Cancel anytime"],
+      "features": [
+        "Unlimited full-quality downloads",
+        "Early access to new uploads",
+        "No ads, no limits",
+        "Cancel anytime"
+      ],
       "cta": "Start Premium"
     }
   },
