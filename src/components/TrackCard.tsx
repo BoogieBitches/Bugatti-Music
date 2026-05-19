@@ -65,7 +65,7 @@ export function TrackCard({ track, previewUrl, imageUrl, videoUrl }: Props) {
     });
   }, [registerFirstPlayCallback, track.id]);
 
-  const ck = (track as Record<string, unknown>).camelot_key as string | null | undefined;
+  const ck = track.camelot_key ?? null;
 
   return (
     <motion.article
