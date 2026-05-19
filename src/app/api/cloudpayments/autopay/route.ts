@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { chargeByToken, CP_PREMIUM_AMOUNT } from "@/lib/cloudpayments/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasCloudpaymentsEnv, hasSupabaseEnv } from "@/lib/env";
+import { sendAutopayDeclinedEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,7 +11,6 @@ export const dynamic = "force-dynamic";
 const RENEWAL_LEAD_DAYS = 2;
 const MAX_RENEWALS_PER_RUN = 1000;
 
-// Deterministic invoice ID per (user, renewal cycle) for idempotency.
 function invoiceId(userId: string, premiumUntilIso: string): string {
   return createHash("sha256")
     .update(`autopay:${userId}:${premiumUntilIso}`)
@@ -20,15 +20,16 @@ function invoiceId(userId: string, premiumUntilIso: string): string {
 
 /**
  * Vercel Cron entry point for monthly Premium auto-renewal via CloudPayments.
- * Runs daily at 03:00 UTC. Does two things:
+ * Runs daily at 03:00 UTC. Does three things:
  *
  * 1. Expires Premium for users whose premium_until has passed (is_premium = false).
- * 2. Charges users whose subscription expires within RENEWAL_LEAD_DAYS days and
- *    who have a saved card token.
+ * 2. Charges users whose subscription expires within RENEWAL_LEAD_DAYS days
+ *    and who have a saved card token.
+ * 3. On a declined charge: removes the card token and sends an email via Resend
+ *    so the user knows to re-subscribe.
  *
- * On a successful charge CloudPayments fires a payment webhook →
+ * On a successful charge, CloudPayments fires a webhook to
  * /api/cloudpayments/webhook which activates Premium for another 30 days.
- * This route never writes premium_until directly.
  */
 export async function GET(request: NextRequest) {
   const expected = process.env.CRON_SECRET;
@@ -48,7 +49,6 @@ export async function GET(request: NextRequest) {
   const now = new Date();
 
   // ── Step 1: Expire stale Premium ──────────────────────────────────────────
-  // Find users marked as premium but whose premium_until has already passed.
   const { data: expired, error: expireQueryErr } = await admin
     .from("profiles")
     .select("id")
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
 
   const { data: candidates, error: queryErr } = await admin
     .from("profiles")
-    .select("id, premium_until, cloudpayments_token")
+    .select("id, email, preferred_locale, premium_until, cloudpayments_token")
     .eq("is_premium", true)
     .not("cloudpayments_token", "is", null)
     .not("premium_until", "is", null)
@@ -133,12 +133,21 @@ export async function GET(request: NextRequest) {
           transactionId: res.Model?.TransactionId,
         });
       } else {
-        // Charge declined — clear the token so we stop trying
+        // ── Declined: remove token + notify user ──────────────────────────
         console.warn("[cp-autopay] charge declined", { userId, message: res.Message });
+
         await admin
           .from("profiles")
           .update({ cloudpayments_token: null })
           .eq("id", userId);
+
+        if (profile.email) {
+          await sendAutopayDeclinedEmail({
+            to: profile.email,
+            locale: profile.preferred_locale,
+          });
+        }
+
         results.push({ userId, status: "declined", error: res.Message ?? undefined });
       }
     } catch (err) {
