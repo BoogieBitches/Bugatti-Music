@@ -20,11 +20,15 @@ function invoiceId(userId: string, premiumUntilIso: string): string {
 
 /**
  * Vercel Cron entry point for monthly Premium auto-renewal via CloudPayments.
- * Runs daily at 03:00 UTC. Charges users whose subscription expires within
- * RENEWAL_LEAD_DAYS days and who have a saved card token.
+ * Runs daily at 03:00 UTC. Does two things:
  *
- * On success CloudPayments fires payment webhook → /api/cloudpayments/webhook
- * which activates Premium for another 30 days. This route never writes profiles.
+ * 1. Expires Premium for users whose premium_until has passed (is_premium = false).
+ * 2. Charges users whose subscription expires within RENEWAL_LEAD_DAYS days and
+ *    who have a saved card token.
+ *
+ * On a successful charge CloudPayments fires a payment webhook →
+ * /api/cloudpayments/webhook which activates Premium for another 30 days.
+ * This route never writes premium_until directly.
  */
 export async function GET(request: NextRequest) {
   const expected = process.env.CRON_SECRET;
@@ -42,6 +46,34 @@ export async function GET(request: NextRequest) {
 
   const admin = createSupabaseAdminClient();
   const now = new Date();
+
+  // ── Step 1: Expire stale Premium ──────────────────────────────────────────
+  // Find users marked as premium but whose premium_until has already passed.
+  const { data: expired, error: expireQueryErr } = await admin
+    .from("profiles")
+    .select("id")
+    .eq("is_premium", true)
+    .not("premium_until", "is", null)
+    .lt("premium_until", now.toISOString());
+
+  let expiredCount = 0;
+  if (expireQueryErr) {
+    console.error("[cp-autopay] expire query failed", expireQueryErr);
+  } else if (expired && expired.length > 0) {
+    const ids = expired.map((p) => p.id);
+    const { error: expireErr } = await admin
+      .from("profiles")
+      .update({ is_premium: false })
+      .in("id", ids);
+    if (expireErr) {
+      console.error("[cp-autopay] expire update failed", expireErr);
+    } else {
+      expiredCount = ids.length;
+      console.log("[cp-autopay] expired premium for", expiredCount, "user(s)");
+    }
+  }
+
+  // ── Step 2: Charge upcoming renewals ──────────────────────────────────────
   const cutoff = new Date(now.getTime() + RENEWAL_LEAD_DAYS * 24 * 60 * 60 * 1000);
 
   const { data: candidates, error: queryErr } = await admin
@@ -57,11 +89,11 @@ export async function GET(request: NextRequest) {
 
   if (queryErr) {
     console.error("[cp-autopay] candidate query failed", queryErr);
-    return NextResponse.json({ error: queryErr.message }, { status: 500 });
+    return NextResponse.json({ error: queryErr.message, expiredCount }, { status: 500 });
   }
 
   if (!candidates || candidates.length === 0) {
-    return NextResponse.json({ ok: true, processed: 0 });
+    return NextResponse.json({ ok: true, expiredCount, processed: 0 });
   }
 
   const results: Array<{
@@ -101,7 +133,12 @@ export async function GET(request: NextRequest) {
           transactionId: res.Model?.TransactionId,
         });
       } else {
+        // Charge declined — clear the token so we stop trying
         console.warn("[cp-autopay] charge declined", { userId, message: res.Message });
+        await admin
+          .from("profiles")
+          .update({ cloudpayments_token: null })
+          .eq("id", userId);
         results.push({ userId, status: "declined", error: res.Message ?? undefined });
       }
     } catch (err) {
@@ -111,5 +148,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, processed: results.length, results });
+  return NextResponse.json({ ok: true, expiredCount, processed: results.length, results });
 }
