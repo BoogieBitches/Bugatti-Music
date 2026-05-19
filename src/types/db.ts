@@ -18,6 +18,8 @@ export interface Profile {
   stripe_subscription_id: string | null;
   yookassa_payment_method_id: string | null;
   yookassa_last_payment_id: string | null;
+  cloudpayments_token: string | null;
+  cloudpayments_last_transaction_id: number | null;
   preferred_locale: Locale;
   created_at: string;
   updated_at: string;
@@ -41,6 +43,7 @@ export interface Track {
   style: string | null;
   bpm: number | null;
   music_key: string | null;
+  camelot_key: string | null;
   duration_seconds: number | null;
   audio_path: string;
   preview_path: string | null;
@@ -120,3 +123,4 @@ export type Database = {
     };
   };
 };
+
