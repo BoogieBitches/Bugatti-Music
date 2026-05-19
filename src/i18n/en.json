@@ -21,7 +21,7 @@
   },
   "common": {
     "search": "Search",
-    "loading": "Loading…",
+    "loading": "Loading\u2026",
     "save": "Save",
     "cancel": "Cancel",
     "delete": "Delete",
@@ -31,7 +31,7 @@
     "play": "Play",
     "pause": "Pause",
     "download": "Download",
-    "previewOnly": "Preview only — upgrade to Premium for full download",
+    "previewOnly": "Preview only \u2014 upgrade to Premium for full download",
     "premiumBadge": "Premium",
     "free": "Free",
     "yes": "Yes",
@@ -39,7 +39,8 @@
     "actions": "Actions",
     "language": "Language",
     "english": "English",
-    "russian": "Русский"
+    "russian": "\u0420\u0443\u0441\u0441\u043a\u0438\u0439",
+    "error": "Payment failed. Please try again."
   },
   "home": {
     "hero": {
@@ -51,22 +52,10 @@
     "features": {
       "title": "Everything a modern pool needs",
       "items": [
-        {
-          "title": "Curated catalog",
-          "body": "Hip-Hop, House, EDM, Reggaeton, Phonk and more — all moderated."
-        },
-        {
-          "title": "Crystal-clear previews",
-          "body": "Listen to 30-second previews on any device, no signup required."
-        },
-        {
-          "title": "Premium downloads",
-          "body": "Subscribe once, download every approved track in full quality."
-        },
-        {
-          "title": "Animated covers",
-          "body": "Upload looping video or animated artwork — your tracks pop on every screen."
-        }
+        { "title": "Curated catalog", "body": "Hip-Hop, House, EDM, Reggaeton, Phonk and more \u2014 all moderated." },
+        { "title": "Crystal-clear previews", "body": "Listen to 30-second previews on any device, no signup required." },
+        { "title": "Premium downloads", "body": "Subscribe once, download every approved track in full quality." },
+        { "title": "Animated covers", "body": "Upload looping video or animated artwork \u2014 your tracks pop on every screen." }
       ]
     }
   },
@@ -80,8 +69,8 @@
     "submitSignup": "Create account",
     "googleContinue": "Continue with Google",
     "telegramContinue": "Continue with Telegram",
-    "telegramHint": "Clicking opens a Telegram window — confirm to sign in.",
-    "socialOnlyHint": "Sign in with Google or Telegram — no password to remember. More providers coming soon.",
+    "telegramHint": "Clicking opens a Telegram window \u2014 confirm to sign in.",
+    "socialOnlyHint": "Sign in with Google or Telegram \u2014 no password to remember. More providers coming soon.",
     "telegramErrorInvalid": "We couldn't verify your Telegram sign-in. Please try again.",
     "telegramErrorConfig": "Telegram sign-in isn't available right now. Try Google.",
     "googleOnlyHint": "We use Google for sign-in so you never have to manage a separate password. More providers coming soon.",
@@ -112,7 +101,7 @@
     "title": "Catalog",
     "noResults": "No tracks match your filters yet.",
     "emptyTitle": "The pool is just opening.",
-    "emptyBody": "Bugatti Sound is in its founding-releases phase. Be one of the first artists — upload your first track and it will land in the catalog right after moderation.",
+    "emptyBody": "Bugatti Sound is in its founding-releases phase. Be one of the first artists \u2014 upload your first track and it will land in the catalog right after moderation.",
     "emptyCta": "Upload a track",
     "emptySecondary": "See pricing",
     "filters": {
@@ -122,13 +111,10 @@
       "maxBpm": "Max BPM",
       "key": "Key",
       "all": "All",
-      "search": "Search title, artist, style…",
+      "search": "Search title, artist, style\u2026",
       "reset": "Reset"
     },
-    "sort": {
-      "newest": "Newest",
-      "popular": "Most played"
-    }
+    "sort": { "newest": "Newest", "popular": "Most played" }
   },
   "track": {
     "by": "by",
@@ -155,9 +141,9 @@
     "key": "Musical key",
     "description": "Description (optional)",
     "audioFile": "Audio file (MP3 / WAV / FLAC)",
-    "previewFile": "30-sec preview (optional — auto-generated if omitted)",
+    "previewFile": "30-sec preview (optional \u2014 auto-generated if omitted)",
     "coverImage": "Cover image (jpg, png, webp)",
-    "coverVideo": "Cover video / animation (mp4, webm, gif — optional)",
+    "coverVideo": "Cover video / animation (mp4, webm, gif \u2014 optional)",
     "isPremiumOnly": "Premium-only download",
     "submit": "Submit for review",
     "successTitle": "Submitted for review",
@@ -175,7 +161,7 @@
       "manage": "Manage subscription",
       "upgrade": "Upgrade to Premium",
       "cardSaved": "Card linked for subscription auto-renewal.",
-      "noCard": "No card linked. Auto-renewal is off — your subscription will not renew automatically at the end of the period.",
+      "noCard": "No card linked. Auto-renewal is off \u2014 your subscription will not renew automatically at the end of the period.",
       "unbindCard": "Unlink card",
       "unbindConfirm": "Sure? Your card will be unlinked and auto-renewal will turn off. Premium stays active until the end of the paid period.",
       "unbindConfirmYes": "Yes, unlink",
@@ -184,11 +170,7 @@
     "myTracks": {
       "title": "My tracks",
       "empty": "You haven't uploaded any tracks yet.",
-      "status": {
-        "pending": "Pending review",
-        "approved": "Live",
-        "rejected": "Rejected"
-      }
+      "status": { "pending": "Pending review", "approved": "Live", "rejected": "Rejected" }
     }
   },
   "admin": {
@@ -209,22 +191,13 @@
     "free": {
       "name": "Free",
       "price": "$0",
-      "features": [
-        "Browse the full catalog",
-        "30-second previews on every track",
-        "Submit your own tracks"
-      ]
+      "features": ["Browse the full catalog", "30-second previews on every track", "Submit your own tracks"]
     },
     "premium": {
       "name": "Premium",
-      "price": "499 ₽",
+      "price": "499 \u20bd",
       "period": "/ month",
-      "features": [
-        "Unlimited full-quality downloads",
-        "Early access to new uploads",
-        "No ads, no limits",
-        "Cancel anytime"
-      ],
+      "features": ["Unlimited full-quality downloads", "Early access to new uploads", "No ads, no limits", "Cancel anytime"],
       "cta": "Start Premium"
     }
   },
@@ -242,24 +215,13 @@
   "earlyProducers": {
     "eyebrow": "For producers",
     "title": "Be the first artist.",
-    "body": "We just opened the doors. Early artists get maximum exposure, a spot in Trending, and a 'founding artist' badge on their profile. Upload your track — it will land in the catalog after a quick review.",
+    "body": "We just opened the doors. Early artists get maximum exposure, a spot in Trending, and a 'founding artist' badge on their profile. Upload your track \u2014 it will land in the catalog after a quick review.",
     "cta": "Upload your first track",
     "secondary": "How it works"
   },
   "legal": {
-    "terms": {
-      "title": "Terms of Service",
-      "lastUpdated": "Last updated",
-      "intro": "By using Bugatti Sound, you agree to the terms below. Please read them carefully."
-    },
-    "privacy": {
-      "title": "Privacy Policy",
-      "lastUpdated": "Last updated",
-      "intro": "We respect your privacy and only process data as described in this policy."
-    },
-    "requisites": {
-      "title": "Business details",
-      "intro": "Information about the service owner, as required by Russian law."
-    }
+    "terms": { "title": "Terms of Service", "lastUpdated": "Last updated", "intro": "By using Bugatti Sound, you agree to the terms below. Please read them carefully." },
+    "privacy": { "title": "Privacy Policy", "lastUpdated": "Last updated", "intro": "We respect your privacy and only process data as described in this policy." },
+    "requisites": { "title": "Business details", "intro": "Information about the service owner, as required by Russian law." }
   }
 }
