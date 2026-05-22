@@ -44,13 +44,11 @@ function verifyHmac(rawBody: string, secretKey: string, headerValue: string | nu
  * Falls back to JSON for forward-compatibility.
  */
 function parseBody(rawBody: string, contentType: string | null): CpWebhookPayload | null {
-  // Try form-encoded first (CP default)
-  if (!contentType || contentType.includes("application/x-www-form-urlencoded") || !contentType.includes("json")) {
+  if (!contentType || !contentType.includes("json")) {
     try {
       const params = new URLSearchParams(rawBody);
       const obj: Record<string, unknown> = {};
       for (const [key, val] of params.entries()) {
-        // Coerce numeric fields
         if (["TransactionId", "Amount", "PaymentAmount"].includes(key) && val !== "") {
           obj[key] = Number(val);
         } else {
@@ -62,7 +60,6 @@ function parseBody(rawBody: string, contentType: string | null): CpWebhookPayloa
       // fall through to JSON
     }
   }
-  // Try JSON
   try {
     return JSON.parse(rawBody) as CpWebhookPayload;
   } catch {
@@ -79,20 +76,19 @@ export async function POST(request: NextRequest) {
   const contentType = request.headers.get("content-type");
   const secretKey = process.env.CLOUDPAYMENTS_SECRET_KEY ?? "";
 
-  // HMAC check — log failure but do NOT hard-reject so we can diagnose.
-  // In production you should set strictHmac = true.
+  // Strict HMAC verification — rejects any request that does not carry
+  // a valid Content-HMAC signature. This prevents spoofed webhook calls.
   const hmacHeader =
     request.headers.get("content-hmac") ??
     request.headers.get("x-content-hmac");
-  const hmacOk = verifyHmac(rawBody, secretKey, hmacHeader);
-  if (!hmacOk) {
-    console.warn("[cp-webhook] HMAC mismatch or missing header", {
+
+  if (!verifyHmac(rawBody, secretKey, hmacHeader)) {
+    console.warn("[cp-webhook] HMAC verification failed — rejecting request", {
       hasHeader: !!hmacHeader,
       contentType,
-      bodyPreview: rawBody.slice(0, 120),
     });
-    // Soft-fail: still process in case CP does not send HMAC in test mode.
-    // Remove this bypass once production HMAC is confirmed working.
+    // Return 200 with code 13 per CP docs (non-200 causes aggressive retries).
+    return NextResponse.json({ code: 13 });
   }
 
   const payload = parseBody(rawBody, contentType);
@@ -106,7 +102,6 @@ export async function POST(request: NextRequest) {
     status: payload.Status,
     accountId: payload.AccountId,
     hasToken: !!payload.Token,
-    hmacOk,
   });
 
   if (payload.Status !== "Completed") {
