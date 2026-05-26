@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "path": "/api/cloudpayments/autopay",
+      "path": "/api/robokassa/autopay",
       "schedule": "0 3 * * *"
     }
   ]
