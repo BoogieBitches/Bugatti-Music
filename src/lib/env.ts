@@ -24,6 +24,10 @@ export const env = {
   cloudpaymentsSecretKey: () =>
     required("CLOUDPAYMENTS_SECRET_KEY", process.env.CLOUDPAYMENTS_SECRET_KEY),
 
+  robokassaLogin: () => required("ROBOKASSA_LOGIN", process.env.ROBOKASSA_LOGIN),
+  robokassaPassword1: () => required("ROBOKASSA_PASSWORD1", process.env.ROBOKASSA_PASSWORD1),
+  robokassaPassword2: () => required("ROBOKASSA_PASSWORD2", process.env.ROBOKASSA_PASSWORD2),
+
   appUrl: () => {
     if (process.env.NEXT_PUBLIC_APP_URL && process.env.NEXT_PUBLIC_APP_URL.length > 0) {
       return process.env.NEXT_PUBLIC_APP_URL;
@@ -34,7 +38,6 @@ export const env = {
     return "http://localhost:3000";
   },
 
-  // Optional: comma-separated list of emails to auto-promote to admin on first login.
   adminEmails: () =>
     (process.env.ADMIN_EMAILS ?? "")
       .split(",")
@@ -48,4 +51,12 @@ export function hasSupabaseEnv(): boolean {
 
 export function hasCloudpaymentsEnv(): boolean {
   return !!process.env.CLOUDPAYMENTS_PUBLIC_ID && !!process.env.CLOUDPAYMENTS_SECRET_KEY;
+}
+
+export function hasRobokassaEnv(): boolean {
+  return (
+    !!process.env.ROBOKASSA_LOGIN &&
+    !!process.env.ROBOKASSA_PASSWORD1 &&
+    !!process.env.ROBOKASSA_PASSWORD2
+  );
 }
