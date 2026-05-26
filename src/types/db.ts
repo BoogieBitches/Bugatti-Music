@@ -20,6 +20,8 @@ export interface Profile {
   yookassa_last_payment_id: string | null;
   cloudpayments_token: string | null;
   cloudpayments_last_transaction_id: number | null;
+  robokassa_rebill_id: number | null;
+  robokassa_last_inv_id: number | null;
   preferred_locale: Locale;
   created_at: string;
   updated_at: string;
@@ -123,4 +125,3 @@ export type Database = {
     };
   };
 };
-
