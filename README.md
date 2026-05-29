@@ -1,14 +1,16 @@
 # Bugatti Sound
 
-A modern music pool (DJ-City / ZipDJ / BPM Supreme style) built with Next.js 16, Supabase, and ЮKassa. Free to listen, premium to download. Built for top DJs.
+A modern music pool (DJ-City / ZipDJ / BPM Supreme style) built with Next.js 16, Supabase, and Robokassa. Free to listen, premium to download. Built for top DJs.
+
+Production: <https://bugattisound.online>
 
 ## Stack
 
 - **Next.js 16** (App Router) + TypeScript + Tailwind v4
-- **Supabase**: Postgres + Auth (email + Google OAuth) + Storage
-- **ЮKassa**: subscription billing for the Premium plan (RUB)
+- **Supabase**: Postgres + Auth (email + Google OAuth + Telegram login) + Storage
+- **Robokassa**: subscription billing for the Premium plan (RUB), with recurring auto-renewal
 - **i18n**: built-in dictionaries for `en` and `ru`, locale-prefixed routes (`/en/...`, `/ru/...`)
-- **Vercel**: free hosting target
+- **Vercel**: hosting target (+ Vercel Cron for auto-renewal)
 
 ## Features
 
@@ -18,7 +20,7 @@ A modern music pool (DJ-City / ZipDJ / BPM Supreme style) built with Next.js 16,
 - User uploads with admin moderation (`pending` → `approved` / `rejected`)
 - Admin moderation panel (auto-shows for users with `role = 'admin'`)
 - User dashboard with subscription status & track history
-- ЮKassa hosted payment page, autopay via saved payment method, webhook-driven Premium entitlement
+- Robokassa hosted payment page, recurring auto-renewal via saved rebill id, webhook-driven Premium entitlement
 - Mobile-first responsive layout
 - Russian / English language switch (locale persisted in cookie + Supabase profile)
 
@@ -34,21 +36,27 @@ pnpm install
 
 1. Sign in at <https://supabase.com> and create a new project.
 2. In **Settings → API**, copy the project URL, the `anon` key and the `service_role` key.
-3. Open the **SQL Editor** and run the migrations from `supabase/migrations/` in order:
+3. Open the **SQL Editor** and run the migrations from `supabase/migrations/` in order (`001` → `010`). Notably:
    - `001_init.sql` — tables, RLS, triggers
    - `002_storage.sql` — buckets and storage policies
-   - `003_seed_genres.sql` — initial genre list
+   - `003_seed_genres.sql` / `004` / `005` — curated genre list
+   - `010_add_robokassa.sql` — `robokassa_rebill_id` / `robokassa_last_inv_id` columns (required by the webhook)
 4. (Optional) **Authentication → Providers → Google**: paste the Client ID / Secret you create in Google Cloud Console for OAuth login.
 
-### 3. Set up ЮKassa
+### 3. Set up Robokassa
 
-1. Sign up at <https://yookassa.ru> (самозанятый / ИП / ООО).
-2. In ЛК ЮKassa create a **test shop** for development (separate `shopId` with a `test_*` secret key) — see <https://yookassa.ru/developers/payment-acceptance/testing-and-going-live/testing>.
-3. **Settings → Ключи API → "Выпустить секретный ключ"** for both the test and live shops. Copy the key the moment it is shown — ЮKassa only displays it once.
-4. **Settings → Уведомления (HTTP)** → add a notification URL pointing at `https://YOUR-DOMAIN/api/yookassa/webhook` and subscribe to:
-   - `payment.succeeded`
-   - `payment.canceled`
-   - `refund.succeeded`
+1. Sign up / log in at <https://robokassa.ru> and create a shop (магазин).
+2. In **Технические настройки** copy:
+   - **Идентификатор магазина** → `ROBOKASSA_LOGIN`
+   - **Пароль #1** → `ROBOKASSA_PASSWORD1` (signs the outgoing payment link)
+   - **Пароль #2** → `ROBOKASSA_PASSWORD2` (verifies the incoming Result webhook)
+3. Set the hashing **algorithm to MD5** (the app signs with MD5).
+4. Configure the callback URLs in the shop settings:
+   - **Result URL** = `https://YOUR-DOMAIN/api/robokassa/webhook` — **method must be POST** (this webhook only accepts POST; if it is set to GET, Premium will not activate).
+   - **Success URL** = `https://YOUR-DOMAIN/ru/dashboard?checkout=processing`
+   - **Fail URL** = `https://YOUR-DOMAIN/ru/pricing?checkout=failed`
+5. Enable **recurring payments (рекуррентные платежи / Recurring)** for the shop — the first checkout sends `Recurring=true` so subsequent monthly charges can run automatically.
+6. While developing, keep `ROBOKASSA_IS_TEST=1` to use Robokassa test mode; remove it (or set `0`) for live payments.
 
 ### 4. Configure environment variables
 
@@ -84,10 +92,11 @@ Open <http://localhost:3000>. You'll be redirected to `/en` (or `/ru` based on y
 
 1. Push the repo to GitHub.
 2. Import the project on <https://vercel.com>.
-3. In **Settings → Environment Variables**, add every variable from `.env.example`.
-4. Set `NEXT_PUBLIC_APP_URL` to your production URL (e.g. `https://bugatti-sound.vercel.app`).
-5. After the first deploy, update your ЮKassa notification (webhook) URL to point at the production `/api/yookassa/webhook`.
-6. In Supabase **Authentication → URL Configuration**, add the production URL plus `/auth/callback` to the allow-list.
+3. In **Settings → Environment Variables**, add every variable from `.env.example` (including `CRON_SECRET`).
+4. Set `NEXT_PUBLIC_APP_URL` to your production URL (`https://bugattisound.online`).
+5. In the Robokassa shop, set the **Result URL** to the production `https://bugattisound.online/api/robokassa/webhook` (POST) and update Success/Fail URLs to the production domain.
+6. The Premium auto-renewal cron is defined in `vercel.json` (`/api/robokassa/autopay`, daily at 03:00 UTC) and is protected by `CRON_SECRET`.
+7. In Supabase **Authentication → URL Configuration**, add the production URL plus `/auth/callback` to the allow-list.
 
 ## Project layout
 
@@ -99,21 +108,26 @@ src/
       catalog/page.tsx      # browse + filter
       track/[id]/page.tsx   # detail + player + download
       login | signup
+      forgot-password | reset-password
       auth/callback         # Supabase OAuth/email callback
       upload                # user upload form
       dashboard             # subscription + my tracks
       admin                 # moderation panel
       pricing
     api/
-      yookassa/{checkout,portal,webhook}/route.ts
+      robokassa/{checkout,webhook,autopay}/route.ts
+      cloudpayments/{checkout,portal,webhook,autopay}/route.ts  # legacy, unused by UI
+      auth/telegram/route.ts
       tracks/[id]/download/route.ts
       admin/{moderate,bootstrap}/route.ts
   components/               # client + server components
   i18n/                     # en.json / ru.json + provider
   lib/
     supabase/{server,client,admin,proxy}.ts
-    yookassa/server.ts
+    robokassa/server.ts
+    cloudpayments/server.ts
     storage.ts
+    email.ts
     env.ts
   types/db.ts
 proxy.ts                    # locale routing + auth gate (was middleware.ts in Next 15)
@@ -136,7 +150,7 @@ supabase/migrations/        # SQL you run in Supabase SQL editor
 - Approved tracks are publicly readable; pending / rejected ones are visible only to their uploader and admins.
 - Full audio lives in the **private** `audio-tracks` bucket — only reachable via signed URLs minted by the server after verifying the caller's `is_premium` flag (or `admin` role).
 - Previews and covers live in **public** buckets so they can be streamed by anonymous visitors.
-- ЮKassa webhooks re-fetch each payment via the API to verify it (ЮKassa does not sign webhook bodies) and use the service-role key to flip `profiles.is_premium`.
+- The Robokassa Result webhook is verified by recomputing the MD5 signature `OutSum:InvId:Password2[:Shp_...]`; only on a match does the server use the service-role key to flip `profiles.is_premium`. Duplicate `InvId`s are ignored for idempotency.
 
 ## Roadmap (good first follow-ups)
 
