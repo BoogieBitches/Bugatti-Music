@@ -42,6 +42,12 @@ export async function POST(request: NextRequest) {
   const login = env.robokassaLogin();
   const password1 = env.robokassaPassword1();
   const isTest = process.env.ROBOKASSA_IS_TEST === "1";
+  // Recurring (auto-renewal) must be explicitly enabled for the shop by
+  // Robokassa support. Until then, sending Recurring=true makes Robokassa
+  // reject the payment with error 34. Gate it behind an env flag so the
+  // one-time payment works out of the box and auto-renewal can be switched
+  // on once the shop is approved.
+  const recurring = process.env.ROBOKASSA_RECURRING === "1";
   const appUrl = env.appUrl();
   const invId = generateInvId();
   const shpParams: Record<string, string> = { Shp_userId: user.id };
@@ -56,7 +62,7 @@ export async function POST(request: NextRequest) {
     successUrl: `${appUrl}/${locale}/dashboard?checkout=processing`,
     failUrl: `${appUrl}/${locale}/pricing?checkout=failed`,
     resultUrl: `${appUrl}/api/robokassa/webhook`,
-    recurring: true,
+    recurring,
     shpParams,
   });
 
