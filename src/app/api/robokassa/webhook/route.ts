@@ -24,6 +24,7 @@ function textResponse(body: string) {
 
 export async function POST(request: NextRequest) {
   if (!hasRobokassaEnv() || !hasSupabaseEnv()) {
+    console.error("[rk-webhook] env not configured");
     return textResponse("FAIL0");
   }
 
@@ -35,14 +36,30 @@ export async function POST(request: NextRequest) {
   const signatureValue = params.get("SignatureValue") ?? "";
   const userId = params.get("Shp_userId") ?? "";
 
+  // Log ALL received parameters for debugging
+  const allParams: Record<string, string> = {};
+  for (const [k, v] of params.entries()) allParams[k] = v;
+  console.log("[rk-webhook] received params", JSON.stringify(allParams));
+
   const shpParams: Record<string, string> = {};
   if (userId) shpParams["Shp_userId"] = userId;
 
   const password2 = env.robokassaPassword2();
+
+  // Build expected signature for debug logging (safe — shows result not password)
   const sigOk = verifyWebhookSignature(outSum, invId, password2, signatureValue, shpParams);
 
+  console.log("[rk-webhook] signature check", {
+    outSum,
+    invId,
+    hasUserId: !!userId,
+    shpKeys: Object.keys(shpParams),
+    receivedSig: signatureValue,
+    sigOk,
+  });
+
   if (!sigOk) {
-    console.warn("[rk-webhook] signature mismatch", { outSum, invId, hasUserId: !!userId });
+    console.warn("[rk-webhook] signature mismatch — wrong ROBOKASSA_PASSWORD2 or shp params order");
     return textResponse(`FAIL${invId}`);
   }
 
