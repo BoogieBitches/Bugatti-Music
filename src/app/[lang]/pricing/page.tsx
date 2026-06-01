@@ -4,9 +4,12 @@ import { getDictionary } from "@/i18n/dictionaries";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { hasSupabaseEnv, hasRobokassaEnv } from "@/lib/env";
 import { CheckoutButton } from "@/components/CheckoutButton";
-import { Check } from "lucide-react";
+import { Check, AlertTriangle } from "lucide-react";
 
-export default async function PricingPage({ params }: PageProps<"/[lang]/pricing">) {
+export default async function PricingPage({
+  params,
+  searchParams,
+}: PageProps<"/[lang]/pricing">) {
   const { lang } = await params;
   if (!isLocale(lang)) notFound();
   const dict = await getDictionary(lang);
@@ -35,10 +38,20 @@ export default async function PricingPage({ params }: PageProps<"/[lang]/pricing
     }
   }
 
+  const sp = await searchParams;
+  const checkoutFailed = sp?.checkout === "failed";
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-16">
       <h1 className="text-4xl md:text-5xl font-bold tracking-tight">{dict.pricing.title}</h1>
       <p className="text-[var(--muted)] mt-2 text-lg">{dict.pricing.subtitle}</p>
+
+      {checkoutFailed && (
+        <div className="mt-6 flex items-start gap-3 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-300">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span>{dict.pricing.checkout.failed}</span>
+        </div>
+      )}
 
       <div className="mt-10 grid md:grid-cols-2 gap-4">
         <div className="bs-card p-6">
