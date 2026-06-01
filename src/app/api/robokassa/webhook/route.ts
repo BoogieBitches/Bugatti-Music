@@ -36,7 +36,6 @@ export async function POST(request: NextRequest) {
   const signatureValue = params.get("SignatureValue") ?? "";
   const userId = params.get("Shp_userId") ?? "";
 
-  // Log ALL received parameters for debugging
   const allParams: Record<string, string> = {};
   params.forEach((v, k) => { allParams[k] = v; });
   console.log("[rk-webhook] received params", JSON.stringify(allParams));
@@ -45,18 +44,30 @@ export async function POST(request: NextRequest) {
   if (userId) shpParams["Shp_userId"] = userId;
 
   const password2 = env.robokassaPassword2();
-
-  // Build expected signature for debug logging (safe — shows result not password)
   const sigOk = verifyWebhookSignature(outSum, invId, password2, signatureValue, shpParams);
 
   console.log("[rk-webhook] signature check", {
-    outSum,
-    invId,
-    hasUserId: !!userId,
+    outSum, invId, hasUserId: !!userId,
     shpKeys: Object.keys(shpParams),
     receivedSig: signatureValue,
     sigOk,
   });
+
+  const admin = createSupabaseAdminClient();
+
+  // Store every webhook call in audit_log for admin inspection
+  await admin.from("audit_log").insert({
+    action: "rk_webhook",
+    target_user_id: userId || null,
+    details: {
+      invId,
+      outSum,
+      userId,
+      sigOk,
+      receivedSig: signatureValue,
+      allParams,
+    },
+  }).catch(() => {});
 
   if (!sigOk) {
     console.warn("[rk-webhook] signature mismatch — wrong ROBOKASSA_PASSWORD2 or shp params order");
@@ -68,7 +79,6 @@ export async function POST(request: NextRequest) {
     return textResponse(`OK${invId}`);
   }
 
-  const admin = createSupabaseAdminClient();
   const { data: existing } = await admin
     .from("profiles")
     .select("robokassa_last_inv_id, premium_until")
@@ -98,10 +108,7 @@ export async function POST(request: NextRequest) {
   }
 
   console.log("[rk-webhook] premium activated", {
-    userId,
-    invId,
-    amount: outSum,
-    premiumUntil: premiumUntil(existing?.premium_until),
+    userId, invId, amount: outSum,
   });
 
   return textResponse(`OK${invId}`);
