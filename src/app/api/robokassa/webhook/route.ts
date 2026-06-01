@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
 
   // Log ALL received parameters for debugging
   const allParams: Record<string, string> = {};
-  for (const [k, v] of params.entries()) allParams[k] = v;
+  params.forEach((v, k) => { allParams[k] = v; });
   console.log("[rk-webhook] received params", JSON.stringify(allParams));
 
   const shpParams: Record<string, string> = {};
