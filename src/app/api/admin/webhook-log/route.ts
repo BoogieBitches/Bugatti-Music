@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await admin
     .from("audit_log")
-    .select("id, created_at, target_user_id, details")
+    .select("id, created_at, meta")
     .eq("action", "rk_webhook")
     .order("created_at", { ascending: false })
     .limit(limit);
