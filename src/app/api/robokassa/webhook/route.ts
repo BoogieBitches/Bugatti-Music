@@ -56,17 +56,19 @@ export async function POST(request: NextRequest) {
   const admin = createSupabaseAdminClient();
 
   // Store every webhook call in audit_log for admin inspection
-  await admin.from("audit_log").insert({
-    action: "rk_webhook",
-    meta: {
-      invId,
-      outSum,
-      userId,
-      sigOk,
-      receivedSig: signatureValue,
-      allParams,
-    },
-  }).catch(() => {});
+  try {
+    await admin.from("audit_log").insert({
+      action: "rk_webhook",
+      meta: {
+        invId,
+        outSum,
+        userId,
+        sigOk,
+        receivedSig: signatureValue,
+        allParams,
+      },
+    });
+  } catch (_) {}
 
   if (!sigOk) {
     console.warn("[rk-webhook] signature mismatch — wrong ROBOKASSA_PASSWORD2 or shp params order");
