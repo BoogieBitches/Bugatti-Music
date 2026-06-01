@@ -58,8 +58,7 @@ export async function POST(request: NextRequest) {
   // Store every webhook call in audit_log for admin inspection
   await admin.from("audit_log").insert({
     action: "rk_webhook",
-    target_user_id: userId || null,
-    details: {
+    meta: {
       invId,
       outSum,
       userId,
