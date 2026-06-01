@@ -7,7 +7,10 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Track } from "@/types/db";
 import { ManageSubscriptionButton } from "@/components/ManageSubscriptionButton";
 
-export default async function DashboardPage({ params }: PageProps<"/[lang]/dashboard">) {
+export default async function DashboardPage({
+  params,
+  searchParams,
+}: PageProps<"/[lang]/dashboard">) {
   const { lang } = await params;
   if (!isLocale(lang)) notFound();
   if (!hasSupabaseEnv()) notFound();
@@ -40,9 +43,19 @@ export default async function DashboardPage({ params }: PageProps<"/[lang]/dashb
     ? new Date(profile.premium_until).toLocaleDateString(lang === "ru" ? "ru-RU" : "en-US")
     : "";
 
+  const sp = await searchParams;
+  const checkoutStatus = typeof sp?.checkout === "string" ? sp.checkout : null;
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-10">
       <h1 className="text-3xl md:text-4xl font-bold tracking-tight">{dict.dashboard.title}</h1>
+
+      {checkoutStatus === "processing" && !isPremium && (
+        <div className="mt-4 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-4 py-3 text-sm text-yellow-200">
+          <span className="font-semibold">{dict.dashboard.checkout.processing}</span>{" "}
+          {dict.dashboard.checkout.processingHint}
+        </div>
+      )}
 
       <section className="mt-6 bs-card p-5">
         <h2 className="font-semibold">{dict.dashboard.subscription.title}</h2>
