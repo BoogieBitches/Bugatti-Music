@@ -5,18 +5,18 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const admin = createSupabaseAdminClient();
   const { data: profile } = await admin
     .from("profiles")
-    .select("is_admin")
+    .select("role")
     .eq("id", user.id)
     .maybeSingle();
 
-  if (!profile?.is_admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (profile?.role !== "admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const limit = Math.min(
     parseInt(new URL(request.url).searchParams.get("limit") ?? "20", 10),
