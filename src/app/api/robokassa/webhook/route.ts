@@ -52,19 +52,20 @@ async function handleWebhook(request: NextRequest) {
   const password2 = env.robokassaPassword2();
   const sigOk = verifyWebhookSignature(outSum, invId, password2, signatureValue, shpParams);
 
-  console.log("[rk-webhook] sig check", { outSum, invId, userId, sigOk, receivedSig: signatureValue });
+  console.log("[rk-webhook] sig check", { outSum, invId, userId, sigOk });
 
   const admin = createSupabaseAdminClient();
 
+  // Store every webhook call in audit_log for admin inspection
   try {
     await admin.from("audit_log").insert({
       action: "rk_webhook",
-      meta: { invId, outSum, userId, sigOk, method: request.method, receivedSig: signatureValue, allParams },
+      meta: { invId, outSum, userId, sigOk, method: request.method, allParams },
     });
   } catch (_) {}
 
   if (!sigOk) {
-    console.warn("[rk-webhook] sig mismatch — check ROBOKASSA_PASSWORD2 in Vercel env vars");
+    console.warn("[rk-webhook] sig mismatch — check ROBOKASSA_PASSWORD2 in Vercel");
     return textResponse(`FAIL${invId}`);
   }
 
@@ -73,35 +74,48 @@ async function handleWebhook(request: NextRequest) {
     return textResponse(`OK${invId}`);
   }
 
+  // Deduplicate: check if this invId was already processed via audit_log
+  const { count } = await admin
+    .from("audit_log")
+    .select("id", { count: "exact", head: true })
+    .eq("action", "rk_premium_activated")
+    .eq("meta->>invId" as "action", invId);
+
+  if ((count ?? 0) > 0) {
+    console.log("[rk-webhook] duplicate invId", invId);
+    return textResponse(`OK${invId}`);
+  }
+
   const { data: existing } = await admin
     .from("profiles")
-    .select("robokassa_last_inv_id, premium_until")
+    .select("premium_until")
     .eq("id", userId)
     .maybeSingle();
 
-  const parsedInvId = parseInt(invId, 10);
-
-  if (existing?.robokassa_last_inv_id === parsedInvId) {
-    console.log("[rk-webhook] duplicate InvId", invId);
-    return textResponse(`OK${invId}`);
-  }
+  const newPremiumUntil = premiumUntil(existing?.premium_until);
 
   const { error: updErr } = await admin
     .from("profiles")
     .update({
       is_premium: true,
-      premium_until: premiumUntil(existing?.premium_until),
-      robokassa_last_inv_id: parsedInvId,
-      robokassa_rebill_id: parsedInvId,
+      premium_until: newPremiumUntil,
     })
     .eq("id", userId);
 
   if (updErr) {
-    console.error("[rk-webhook] profile update error", updErr);
+    console.error("[rk-webhook] profile update error", updErr, { userId });
     return textResponse(`FAIL${invId}`);
   }
 
-  console.log("[rk-webhook] premium ACTIVATED userId=" + userId + " invId=" + invId);
+  // Record activation for deduplication
+  try {
+    await admin.from("audit_log").insert({
+      action: "rk_premium_activated",
+      meta: { invId, outSum, userId, premiumUntil: newPremiumUntil },
+    });
+  } catch (_) {}
+
+  console.log("[rk-webhook] PREMIUM ACTIVATED userId=" + userId + " until=" + newPremiumUntil);
   return textResponse(`OK${invId}`);
 }
 
