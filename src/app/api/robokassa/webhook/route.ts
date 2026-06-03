@@ -22,14 +22,20 @@ function textResponse(body: string) {
   return new Response(body, { status: 200, headers: { "Content-Type": "text/plain" } });
 }
 
-export async function POST(request: NextRequest) {
+async function handleWebhook(request: NextRequest) {
   if (!hasRobokassaEnv() || !hasSupabaseEnv()) {
     console.error("[rk-webhook] env not configured");
     return textResponse("FAIL0");
   }
 
-  const rawBody = await request.text();
-  const params = new URLSearchParams(rawBody);
+  // Robokassa may send params via POST body OR GET query string
+  let params: URLSearchParams;
+  if (request.method === "GET") {
+    params = new URL(request.url).searchParams;
+  } else {
+    const rawBody = await request.text();
+    params = new URLSearchParams(rawBody);
+  }
 
   const outSum = params.get("OutSum") ?? "";
   const invId = params.get("InvId") ?? "";
@@ -38,7 +44,7 @@ export async function POST(request: NextRequest) {
 
   const allParams: Record<string, string> = {};
   params.forEach((v, k) => { allParams[k] = v; });
-  console.log("[rk-webhook] received params", JSON.stringify(allParams));
+  console.log("[rk-webhook] method=" + request.method + " params=" + JSON.stringify(allParams));
 
   const shpParams: Record<string, string> = {};
   if (userId) shpParams["Shp_userId"] = userId;
@@ -46,37 +52,24 @@ export async function POST(request: NextRequest) {
   const password2 = env.robokassaPassword2();
   const sigOk = verifyWebhookSignature(outSum, invId, password2, signatureValue, shpParams);
 
-  console.log("[rk-webhook] signature check", {
-    outSum, invId, hasUserId: !!userId,
-    shpKeys: Object.keys(shpParams),
-    receivedSig: signatureValue,
-    sigOk,
-  });
+  console.log("[rk-webhook] sig check", { outSum, invId, userId, sigOk, receivedSig: signatureValue });
 
   const admin = createSupabaseAdminClient();
 
-  // Store every webhook call in audit_log for admin inspection
   try {
     await admin.from("audit_log").insert({
       action: "rk_webhook",
-      meta: {
-        invId,
-        outSum,
-        userId,
-        sigOk,
-        receivedSig: signatureValue,
-        allParams,
-      },
+      meta: { invId, outSum, userId, sigOk, method: request.method, receivedSig: signatureValue, allParams },
     });
   } catch (_) {}
 
   if (!sigOk) {
-    console.warn("[rk-webhook] signature mismatch — wrong ROBOKASSA_PASSWORD2 or shp params order");
+    console.warn("[rk-webhook] sig mismatch — check ROBOKASSA_PASSWORD2 in Vercel env vars");
     return textResponse(`FAIL${invId}`);
   }
 
   if (!userId) {
-    console.warn("[rk-webhook] missing Shp_userId, cannot activate premium");
+    console.warn("[rk-webhook] missing Shp_userId");
     return textResponse(`OK${invId}`);
   }
 
@@ -104,13 +97,18 @@ export async function POST(request: NextRequest) {
     .eq("id", userId);
 
   if (updErr) {
-    console.error("[rk-webhook] profile update error", updErr, { userId });
+    console.error("[rk-webhook] profile update error", updErr);
     return textResponse(`FAIL${invId}`);
   }
 
-  console.log("[rk-webhook] premium activated", {
-    userId, invId, amount: outSum,
-  });
-
+  console.log("[rk-webhook] premium ACTIVATED userId=" + userId + " invId=" + invId);
   return textResponse(`OK${invId}`);
+}
+
+export async function POST(request: NextRequest) {
+  return handleWebhook(request);
+}
+
+export async function GET(request: NextRequest) {
+  return handleWebhook(request);
 }
