@@ -6,6 +6,7 @@ import { hasSupabaseEnv } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Track } from "@/types/db";
 import { ManageSubscriptionButton } from "@/components/ManageSubscriptionButton";
+import { PremiumActivatedBanner } from "@/components/PremiumActivatedBanner";
 
 export default async function DashboardPage({
   params,
@@ -49,6 +50,13 @@ export default async function DashboardPage({
   return (
     <div className="max-w-5xl mx-auto px-4 py-10">
       <h1 className="text-3xl md:text-4xl font-bold tracking-tight">{dict.dashboard.title}</h1>
+
+      {checkoutStatus === "processing" && isPremium && (
+        <PremiumActivatedBanner
+          title={dict.dashboard.checkout.success}
+          hint={dict.dashboard.checkout.successHint}
+        />
+      )}
 
       {checkoutStatus === "processing" && !isPremium && (
         <div className="mt-4 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-4 py-3 text-sm text-yellow-200">
