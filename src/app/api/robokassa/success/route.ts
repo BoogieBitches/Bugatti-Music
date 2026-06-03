@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 // A 303 See Other redirect converts the browser's POST into a GET request,
 // which preserves session cookies and prevents the user from being logged out.
 
-function successRedirect(request: NextRequest): Response {
+function successRedirect(request: NextRequest) {
   const { origin, searchParams } = new URL(request.url);
   const locale = searchParams.get("locale") ?? "ru";
   return NextResponse.redirect(
