@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     desc,
     password1,
     isTest,
-    successUrl: `${appUrl}/${locale}/dashboard?checkout=processing`,
+    successUrl: `${appUrl}/api/robokassa/success?locale=${locale}`,
     failUrl: `${appUrl}/${locale}/pricing?checkout=failed`,
     resultUrl: `${appUrl}/api/robokassa/webhook`,
     recurring,
