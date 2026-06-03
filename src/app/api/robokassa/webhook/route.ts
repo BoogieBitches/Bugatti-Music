@@ -74,18 +74,6 @@ async function handleWebhook(request: NextRequest) {
     return textResponse(`OK${invId}`);
   }
 
-  // Deduplicate: check if this invId was already processed via audit_log
-  const { count } = await admin
-    .from("audit_log")
-    .select("id", { count: "exact", head: true })
-    .eq("action", "rk_premium_activated")
-    .eq("meta->>invId" as "action", invId);
-
-  if ((count ?? 0) > 0) {
-    console.log("[rk-webhook] duplicate invId", invId);
-    return textResponse(`OK${invId}`);
-  }
-
   const { data: existing } = await admin
     .from("profiles")
     .select("premium_until")
