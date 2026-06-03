@@ -193,7 +193,9 @@
     },
     "checkout": {
       "processing": "Payment processing…",
-      "processingHint": "Wait a few seconds and refresh the page. If Premium did not appear — contact us."
+      "processingHint": "Wait a few seconds and refresh the page. If Premium did not appear — contact us.",
+      "success": "Premium activated!",
+      "successHint": "Your subscription is active for 30 days. Enjoy!"
     }
   },
   "admin": {
