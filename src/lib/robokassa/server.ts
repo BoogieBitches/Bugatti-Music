@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const RK_PREMIUM_AMOUNT = 1;
+export const RK_PREMIUM_AMOUNT = 499;
 export const RK_CURRENCY = "RUB";
 
 /** Seconds since 2024-01-01 — unique InvId that fits signed int32 until ~2092. */
