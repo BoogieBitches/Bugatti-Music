@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { isLocale } from "@/i18n/config";
 import { notFound } from "next/navigation";
 import { getDictionary } from "@/i18n/dictionaries";
@@ -17,7 +18,9 @@ export default async function SignupPage({
     <div className="max-w-md mx-auto px-4 py-16">
       <h1 className="text-3xl font-bold tracking-tight">{dict.auth.signupTitle}</h1>
       <div className="mt-6">
-        <LoginForm locale={lang} next={next} dict={dict} />
+        <Suspense fallback={<div className="bs-card p-6 h-40" />}>
+          <LoginForm locale={lang} next={next} dict={dict} mode="signup" />
+        </Suspense>
       </div>
     </div>
   );
