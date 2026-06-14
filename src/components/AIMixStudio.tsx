@@ -40,7 +40,7 @@ interface TransitionPlan {
   toCamelot: string;
 }
 
-type MixStyle = "club" | "festival" | "techhouse" | "openformat" | "radio" | "progressive" | "bugatti";
+type MixStyle = "house" | "club-house" | "bass-house" | "tech-house" | "techno" | "blend-mashup" | "bugatti";
 
 interface JobStatus {
   job_id: string;
@@ -53,13 +53,13 @@ interface JobStatus {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MIX_STYLES: { id: MixStyle; label: string; desc: string; icon: string }[] = [
-  { id: "club",         label: "Club Mix",        desc: "Peak-time energy, hard drops, 128–135 BPM",         icon: "🏟"  },
-  { id: "festival",    label: "Festival Mix",     desc: "Epic builds, massive breakdowns, crowd moments",    icon: "🎪"  },
-  { id: "techhouse",   label: "Tech House Mix",   desc: "Groovy, hypnotic, 124–128 BPM, minimal drops",     icon: "⚙️"  },
-  { id: "openformat",  label: "Open Format",      desc: "Genre-fluid, mixed BPM, crowd-reading flow",       icon: "🌀"  },
-  { id: "radio",       label: "Radio Mix",        desc: "Clean, 60 min, broadcast-ready, tight transitions", icon: "📻" },
-  { id: "progressive", label: "Progressive Mix",  desc: "Slow builds, emotional peaks, 128 BPM journey",    icon: "🌊"  },
+const MIX_STYLES: { id: MixStyle; label: string; bpm: string; desc: string; from: string; to: string }[] = [
+  { id: "house",        label: "House",        bpm: "120–128", desc: "Classic deep grooves, soulful chords, euphoric builds",                 from: "#ffb800", to: "#ff5a00" },
+  { id: "club-house",   label: "Club House",   bpm: "124–128", desc: "Peak-time dancefloor energy, punchy drops, crowd anthems",              from: "#ff3d9a", to: "#7a1fad" },
+  { id: "bass-house",   label: "Bass House",   bpm: "126–132", desc: "Heavy basslines, filthy drops, maximum low-end pressure",               from: "#00d4ff", to: "#1e40ff" },
+  { id: "tech-house",   label: "Tech House",   bpm: "122–126", desc: "Groovy, hypnotic, minimal drops, DJ-tool flow",                         from: "#00e5a8", to: "#00867d" },
+  { id: "techno",       label: "Techno",       bpm: "128–140", desc: "Industrial darkness, relentless drive, peak-hour rave energy",           from: "#9b7aff", to: "#3b1d9c" },
+  { id: "blend-mashup", label: "Blend / Mashup", bpm: "any",  desc: "Creative mashups and blends — mix vocals over different instrumentals",  from: "#ff6b35", to: "#f7c59f" },
 ];
 
 const TRANS_LABELS: Record<string, string> = {
@@ -616,31 +616,49 @@ export function AIMixStudio() {
           <div className="mb-4">
             <h2 className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Select Mix Style</h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {MIX_STYLES.map(s=>(
-                <button key={s.id} onClick={()=>setSelectedStyle(s.id)}
-                  className={`bs-card p-4 text-left transition-all duration-200 border
-                    ${selectedStyle===s.id?"border-[var(--accent)] bg-[var(--accent)]/12 shadow-[0_0_20px_-4px_rgba(122,85,255,0.4)]":"border-transparent hover:border-white/15"}`}>
-                  <div className="text-2xl mb-2">{s.icon}</div>
-                  <div className="font-bold text-sm text-white">{s.label}</div>
-                  <div className="text-xs text-white/40 mt-1">{s.desc}</div>
-                </button>
-              ))}
-              <button onClick={()=>setSelectedStyle("bugatti")}
-                className={`bs-card p-4 text-left md:col-span-3 border transition-all duration-200
-                  ${selectedStyle==="bugatti"
-                    ?"border-[var(--accent)] bg-[var(--accent)]/15 shadow-[0_0_40px_-8px_rgba(122,85,255,0.6)]"
-                    :"border-[var(--accent)]/30 hover:border-[var(--accent)]/60"}`}>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="text-2xl">🏎</div>
-                  <div>
-                    <div className="font-black text-base bs-text-gradient">BUGATTI MODE</div>
-                    <div className="text-xs text-[var(--accent-2)]/70">Advanced AI · Club-ready</div>
-                  </div>
-                  {selectedStyle==="bugatti"&&<span className="ml-auto px-2 py-0.5 rounded-full bg-[var(--accent)]/30 text-[var(--accent-2)] text-xs font-bold">SELECTED</span>}
-                </div>
-                <p className="text-xs text-white/50">Advanced AI analyzes BPM, key, energy, vocals and track structure to create a professional club-ready DJ set with beatmatching, harmonic mixing, phrase matching, intelligent EQ transitions, filter sweeps, smooth crossfades and loudness balancing.</p>
-              </button>
+              {MIX_STYLES.map(s=>{
+                const active = selectedStyle===s.id;
+                return (
+                  <button key={s.id} onClick={()=>setSelectedStyle(s.id)}
+                    className={`group relative overflow-hidden rounded-2xl p-5 text-left transition-all duration-200 border
+                      ${active?"ring-2 ring-white/30 scale-[1.02] border-white/20":"border-white/5 hover:border-white/15 hover:scale-[1.01]"}`}
+                    style={{background:`linear-gradient(135deg,${s.from}22,${s.to}18)`}}>
+                    {/* gradient glow on active */}
+                    <span aria-hidden className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-2xl"
+                      style={{background:`linear-gradient(135deg,${s.from}15,${s.to}10)`}}/>
+                    {active&&<span aria-hidden className="absolute inset-0 rounded-2xl"
+                      style={{background:`linear-gradient(135deg,${s.from}25,${s.to}20)`,boxShadow:`0 0 30px -4px ${s.from}55`}}/>}
+                    <div className="relative">
+                      <div className="text-xs font-bold uppercase tracking-widest mb-1" style={{color:s.from}}>{s.bpm} BPM</div>
+                      <div className="font-black text-base text-white leading-tight mb-1">{s.label}</div>
+                      <div className="text-xs text-white/50 leading-snug">{s.desc}</div>
+                      {active&&<div className="mt-2 inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold text-white" style={{background:`linear-gradient(90deg,${s.from},${s.to})`}}>✓ SELECTED</div>}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
+
+            {/* BUGATTI MODE — full-width special card */}
+            <button onClick={()=>setSelectedStyle("bugatti")}
+              className={`mt-3 w-full relative overflow-hidden rounded-2xl p-5 text-left border transition-all duration-200
+                ${selectedStyle==="bugatti"
+                  ?"ring-2 ring-[var(--accent)]/60 border-[var(--accent)]/40 scale-[1.01] shadow-[0_0_40px_-8px_rgba(122,85,255,0.5)]"
+                  :"border-[var(--accent)]/20 hover:border-[var(--accent)]/40"}`}
+              style={{background:"linear-gradient(135deg,rgba(122,85,255,0.12),rgba(184,157,255,0.08))"}}>
+              {selectedStyle==="bugatti"&&<span aria-hidden className="pointer-events-none absolute inset-0 rounded-2xl" style={{background:"linear-gradient(135deg,rgba(122,85,255,0.18),rgba(184,157,255,0.12))"}}/>}
+              <div className="relative flex items-start gap-4">
+                <div className="text-3xl shrink-0">🏎</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className="font-black text-lg bs-text-gradient">BUGATTI MODE</span>
+                    <span className="px-2 py-0.5 rounded-full bg-[var(--accent)]/20 text-[var(--accent-2)] text-[10px] font-bold border border-[var(--accent)]/30">BEST</span>
+                    {selectedStyle==="bugatti"&&<span className="ml-auto px-2 py-0.5 rounded-full bg-[var(--accent)]/30 text-[var(--accent-2)] text-[10px] font-bold">✓ SELECTED</span>}
+                  </div>
+                  <p className="text-xs text-white/50 leading-relaxed">Advanced AI analyzes BPM, key, energy, vocals and track structure to create a professional club-ready DJ set with beatmatching, harmonic mixing, phrase matching, intelligent EQ transitions, filter sweeps and loudness balancing.</p>
+                </div>
+              </div>
+            </button>
           </div>
 
           {genError&&(
