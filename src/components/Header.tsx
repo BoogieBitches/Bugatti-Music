@@ -66,6 +66,10 @@ export async function Header({ locale }: { locale: Locale }) {
           <Link href={`${lp}/pricing`} className="px-3 py-2 rounded-md hover:text-white hover:bg-white/5 transition-colors">
             {dict.nav.pricing}
           </Link>
+          <Link href={`${lp}/ai-mix-studio`} className="px-3 py-2 rounded-md hover:text-white hover:bg-white/5 transition-colors flex items-center gap-1.5">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+            {dict.nav.aiMixStudio}
+          </Link>
           {userEmail && (
             <Link href={`${lp}/upload`} className="px-3 py-2 rounded-md hover:text-white hover:bg-white/5 transition-colors">
               {dict.nav.upload}
