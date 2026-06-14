@@ -15,6 +15,7 @@ import {
   Shield,
   LogIn,
   ChevronRight,
+  Wand2,
 } from "lucide-react";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { Locale } from "@/i18n/config";
@@ -66,6 +67,7 @@ export function SideRail({
       icon: Grid3x3,
     },
     { href: `${lp}/pricing`, label: dict.nav.pricing, icon: Crown },
+    { href: `${lp}/ai-mix-studio`, label: dict.nav.aiMixStudio, icon: Wand2 },
   ];
 
   const userItems: RailItem[] = isAuthed
