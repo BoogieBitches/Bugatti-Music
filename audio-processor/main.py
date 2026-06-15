@@ -232,6 +232,7 @@ def _run_generation(job_id: str, req: GenerateRequest):
                 transition_type=tr.get("transition_type", "crossfade"),
                 transition_bars=int(tr.get("transition_bars") or 16),
                 bpm_a=float(tr.get("bpm_a") or 128),
+                bpm_b=float(tr.get("bpm_b") or tr.get("bpm_a") or 128),
             ))
 
         def _progress_cb(pct: int, msg: str):
