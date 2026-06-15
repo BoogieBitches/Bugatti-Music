@@ -43,7 +43,7 @@ logging.basicConfig(level=logging.INFO)
 _GEMINI_KEY = os.environ.get("GOOGLE_AI_API_KEY", "")
 if _GEMINI_KEY:
     genai.configure(api_key=_GEMINI_KEY)
-    _gemini = genai.GenerativeModel("gemini-1.5-flash")
+    _gemini = genai.GenerativeModel("gemini-2.0-flash")
     logger.info("Gemini AI enabled")
 else:
     _gemini = None
