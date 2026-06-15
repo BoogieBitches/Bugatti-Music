@@ -4,6 +4,11 @@
     "builder": "NIXPACKS",
     "buildCommand": "pip install -r requirements.txt",
     "nixpacksPlan": {
+      "phases": {
+        "setup": {
+          "nixPkgs": ["rubberband", "ffmpeg"]
+        }
+      },
       "variables": {
         "NIXPACKS_PYTHON_VERSION": "3.11"
       }
