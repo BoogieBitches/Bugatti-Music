@@ -3,6 +3,5 @@ uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 librosa==0.10.2
 numpy==1.26.4
-scipy==1.13.1
 soundfile==0.12.1
 pydub==0.25.1
