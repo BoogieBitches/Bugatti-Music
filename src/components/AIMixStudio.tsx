@@ -399,6 +399,7 @@ export function AIMixStudio() {
           transition_type: p.transitionType,
           transition_bars: p.transitionBars,
           bpm_a: tracks[p.fromIdx].bpm||128,
+          bpm_b: tracks[p.toIdx].bpm||128,
         })),
         mix_style: selectedStyle,
       };
