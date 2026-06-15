@@ -1,21 +1,21 @@
 """
-DJ mix generation engine using pydub.
+DJ mix generation engine — professional edition v2.
 
-Strategy (MVP):
-  - Cut:          hard cut at phrase boundary
-  - Crossfade:    linear amplitude crossfade
-  - Filter sweep: high-pass fade-out + crossfade
-  - Echo out:     long crossfade with reverb-like tail (fade + overlap)
+Upgrades over v1:
+  - BPM beatmatching via librosa phase-vocoder time_stretch on the transition zone
+  - DJ-style bass-swap crossfade (LP on incoming, HP on outgoing — classic technique)
+  - Improved filter_sweep and echo_out with beatmatching
+  - bpm_b field on TransitionSpec for incoming-track tempo
 """
 
 from __future__ import annotations
 
 import io
 import logging
-import math
 from dataclasses import dataclass
 from typing import Literal
 
+import librosa
 import numpy as np
 from pydub import AudioSegment
 from pydub.effects import high_pass_filter, low_pass_filter
@@ -41,19 +41,20 @@ class TransitionSpec:
     to_track_id: str
     transition_type: TransitionType
     transition_bars: int
-    bpm_a: float  # BPM of outgoing track
+    bpm_a: float        # BPM of outgoing track
+    bpm_b: float = 128.0  # BPM of incoming track (for beatmatching)
 
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
 
 def _bars_to_ms(bars: int, bpm: float) -> int:
-    """Convert musical bars to milliseconds (4/4 time)."""
+    """Convert musical bars (4/4 time) to milliseconds."""
     beat_ms = 60_000 / max(bpm, 60)
     return int(bars * 4 * beat_ms)
 
 
 def _ensure_stereo(seg: AudioSegment) -> AudioSegment:
-    if seg.channels == 1:
-        return seg.set_channels(2)
-    return seg
+    return seg.set_channels(2) if seg.channels == 1 else seg
 
 
 def _normalize_loudness(seg: AudioSegment, target_dbfs: float = -14.0) -> AudioSegment:
@@ -61,71 +62,167 @@ def _normalize_loudness(seg: AudioSegment, target_dbfs: float = -14.0) -> AudioS
     return seg.apply_gain(min(diff, 6))  # cap at +6 dB to avoid clipping
 
 
-def _find_outro_start(seg: AudioSegment, spec: TrackSpec) -> int:
-    """Return ms position to start the outro (where we begin the transition out)."""
-    outro_s = spec.sections.get("outro_start") or (spec.duration_seconds * 0.8)
-    return int(min(outro_s * 1000, len(seg) - 8_000))
+def _pad_or_trim(seg: AudioSegment, target_ms: int) -> AudioSegment:
+    """Ensure segment is exactly target_ms long."""
+    if len(seg) < target_ms:
+        return seg + AudioSegment.silent(target_ms - len(seg), frame_rate=seg.frame_rate)
+    return seg[:target_ms]
 
 
-def _crossfade_transition(
+# ── Beatmatching ──────────────────────────────────────────────────────────────
+
+def _time_stretch_zone(seg: AudioSegment, source_bpm: float, target_bpm: float) -> AudioSegment:
+    """
+    Time-stretch a short audio zone using librosa's phase vocoder so it plays
+    at target_bpm instead of source_bpm.
+
+    Only applied when the BPM delta is between 2% and 15% — outside that range
+    the quality degrades noticeably, so we leave the audio unchanged.
+    """
+    if source_bpm <= 0 or target_bpm <= 0:
+        return seg
+    ratio = target_bpm / source_bpm
+    if abs(ratio - 1.0) < 0.02 or not (0.85 <= ratio <= 1.15):
+        return seg  # too similar or too far — don't stretch
+
+    sr = seg.frame_rate
+    raw = np.array(seg.get_array_of_samples(), dtype=np.float32) / 32768.0
+
+    try:
+        if seg.channels == 2:
+            L = raw[0::2]
+            R = raw[1::2]
+            Ls = librosa.effects.time_stretch(L, rate=ratio)
+            Rs = librosa.effects.time_stretch(R, rate=ratio)
+            n = min(len(Ls), len(Rs))
+            out = np.empty(n * 2, dtype=np.float32)
+            out[0::2] = Ls[:n]
+            out[1::2] = Rs[:n]
+        else:
+            out = librosa.effects.time_stretch(raw, rate=ratio)
+
+        int16 = (np.clip(out, -1.0, 1.0) * 32767).astype(np.int16)
+        return AudioSegment(
+            int16.tobytes(),
+            frame_rate=sr,
+            sample_width=2,
+            channels=seg.channels,
+        )
+    except Exception as exc:
+        logger.warning("time_stretch failed (%s) — using original", exc)
+        return seg
+
+
+# ── Transition engines ────────────────────────────────────────────────────────
+
+def _bass_swap_crossfade(
     out_seg: AudioSegment,
     in_seg: AudioSegment,
     fade_ms: int,
+    bpm_a: float = 128.0,
+    bpm_b: float = 128.0,
 ) -> AudioSegment:
-    """Standard linear crossfade: overlap the tail of out_seg with head of in_seg."""
-    fade_ms = max(2_000, min(fade_ms, min(len(out_seg), len(in_seg)) - 1_000))
-    return out_seg.append(in_seg, crossfade=fade_ms)
+    """
+    Professional DJ bass-swap crossfade — the classic technique:
+
+    Phase 1 (first half):
+      • Outgoing: full spectrum, -2 dB
+      • Incoming: low-pass ≤250 Hz (bass only), beatmatched to outgoing BPM
+        → brings the groove/kick of the new track under the old one
+
+    Phase 2 (second half):
+      • Outgoing: high-pass ≥200 Hz (bass removed), fading to silence
+        → kills the bass to avoid mud / double-kick
+      • Incoming: full spectrum, fading in from slight cut
+    """
+    max_fade = min(len(out_seg), len(in_seg)) - 2_000
+    fade_ms = max(4_000, min(fade_ms, max_fade))
+    half = fade_ms // 2
+
+    out_body = out_seg[:-fade_ms]
+    out_tail = out_seg[-fade_ms:]
+    in_head_raw = in_seg[:fade_ms]
+    in_rest = in_seg[fade_ms:]
+
+    # Beatmatch: stretch incoming zone to outgoing BPM
+    in_head = _pad_or_trim(_time_stretch_zone(in_head_raw, bpm_b, bpm_a), fade_ms)
+
+    # Phase 1
+    p1_out = out_tail[:half].apply_gain(-2)
+    try:
+        p1_in = low_pass_filter(in_head[:half], cutoff=250).apply_gain(-1)
+    except Exception:
+        p1_in = in_head[:half].apply_gain(-5)
+    phase1 = p1_out.overlay(p1_in)
+
+    # Phase 2
+    try:
+        p2_out = high_pass_filter(out_tail[half:], cutoff=200).fade_out(half)
+    except Exception:
+        p2_out = out_tail[half:].fade_out(half)
+    p2_in = in_head[half:].fade_in(half // 3)
+    phase2 = p2_out.overlay(p2_in)
+
+    return out_body + phase1 + phase2 + in_rest
 
 
 def _filter_sweep_transition(
     out_seg: AudioSegment,
     in_seg: AudioSegment,
     fade_ms: int,
+    bpm_a: float = 128.0,
+    bpm_b: float = 128.0,
 ) -> AudioSegment:
     """
-    Filter sweep: apply increasing high-pass to the tail of out_seg,
-    then crossfade into in_seg.
+    High-pass filter sweep on the outgoing tail (simulates turning the filter
+    knob on the CDJ), then crossfade into a beatmatched incoming track.
     """
-    fade_ms = max(4_000, min(fade_ms, min(len(out_seg), len(in_seg)) - 1_000))
+    max_fade = min(len(out_seg), len(in_seg)) - 1_000
+    fade_ms = max(4_000, min(fade_ms, max_fade))
+
     tail_start = max(0, len(out_seg) - fade_ms)
     body = out_seg[:tail_start]
     tail = out_seg[tail_start:]
 
-    # Apply high-pass filter to simulate filter-sweep effect
     try:
-        tail_filtered = high_pass_filter(tail, cutoff=300)
-        out_filtered = body + tail_filtered
+        tail_filtered = high_pass_filter(tail, cutoff=300).fade_out(len(tail))
     except Exception:
-        out_filtered = out_seg  # fallback if filter fails
+        tail_filtered = tail.fade_out(len(tail))
 
-    return out_filtered.append(in_seg, crossfade=min(fade_ms // 2, 8_000))
+    cf_ms = min(fade_ms // 2, 8_000)
+    in_head_matched = _pad_or_trim(_time_stretch_zone(in_seg[:cf_ms], bpm_b, bpm_a), cf_ms)
+    in_full = in_head_matched + in_seg[cf_ms:]
+
+    safe_cf = max(1_000, min(cf_ms, len(tail_filtered) - 500, len(in_full) - 500))
+    return (body + tail_filtered).append(in_full, crossfade=safe_cf)
 
 
 def _echo_out_transition(
     out_seg: AudioSegment,
     in_seg: AudioSegment,
     fade_ms: int,
+    bpm_a: float = 128.0,
+    bpm_b: float = 128.0,
 ) -> AudioSegment:
-    """Echo out: long fade on the outgoing, long overlap with incoming."""
-    fade_ms = max(8_000, min(fade_ms, min(len(out_seg), len(in_seg)) - 2_000))
+    """Long reverb-tail fade on outgoing; incoming fades in with beatmatching."""
+    max_fade = min(len(out_seg), len(in_seg)) - 2_000
+    fade_ms = max(8_000, min(fade_ms, max_fade))
 
     tail_start = max(0, len(out_seg) - fade_ms)
     body = out_seg[:tail_start]
-    tail = out_seg[tail_start:]
+    tail = out_seg[tail_start:].fade_out(len(out_seg[tail_start:]))
 
-    # Fade out the tail
-    tail_faded = tail.fade_out(len(tail))
+    overlap_ms = min(fade_ms // 2, 6_000)
+    in_head_matched = _pad_or_trim(_time_stretch_zone(in_seg[:overlap_ms], bpm_b, bpm_a), overlap_ms)
+    in_full = (in_head_matched + in_seg[overlap_ms:]).fade_in(min(overlap_ms // 2, 3_000))
 
-    # Fade in the incoming
-    in_faded = in_seg.fade_in(min(fade_ms // 2, 6_000))
+    out_with_tail = body + tail
+    ov = min(overlap_ms, len(out_with_tail), len(in_full))
+    mixed = out_with_tail[-ov:].overlay(in_full[:ov])
+    return out_with_tail[:-ov] + mixed + in_full[ov:]
 
-    out_with_tail = body + tail_faded
-    # Overlap: mix the last portion of out with the start of in
-    overlap_ms = min(fade_ms // 2, 6_000, len(out_with_tail), len(in_faded))
-    out_final = out_with_tail[:-overlap_ms]
-    mixed_overlap = out_with_tail[-overlap_ms:].overlay(in_faded[:overlap_ms])
-    return out_final + mixed_overlap + in_faded[overlap_ms:]
 
+# ── Main engine ───────────────────────────────────────────────────────────────
 
 def generate_mix(
     tracks: list[TrackSpec],
@@ -133,11 +230,7 @@ def generate_mix(
     mix_style: str,
     progress_callback=None,
 ) -> bytes:
-    """
-    Generate a DJ mix and return the MP3 bytes.
-
-    progress_callback: optional callable(percent: int, message: str)
-    """
+    """Generate a DJ mix and return 320 kbps MP3 bytes."""
     assert len(tracks) >= 1
     total_steps = len(tracks) + len(transitions) + 2
 
@@ -146,7 +239,7 @@ def generate_mix(
             pct = min(95, int(step / total_steps * 100))
             progress_callback(pct, msg)
 
-    # ── Load all tracks ─────────────────────────────────────────────────────
+    # ── Load ──────────────────────────────────────────────────────────────────
     segments: list[AudioSegment] = []
     for i, spec in enumerate(tracks):
         _progress(i, f"Loading {spec.track_id[:8]}...")
@@ -155,9 +248,9 @@ def generate_mix(
             seg = _ensure_stereo(seg).set_frame_rate(44100)
             seg = _normalize_loudness(seg)
             segments.append(seg)
-        except Exception as e:
-            logger.error("Failed to load %s: %s", spec.file_path, e)
-            raise RuntimeError(f"Cannot load track {spec.track_id}: {e}") from e
+        except Exception as exc:
+            logger.error("Failed to load %s: %s", spec.file_path, exc)
+            raise RuntimeError(f"Cannot load track {spec.track_id}: {exc}") from exc
 
     if len(segments) == 1:
         _progress(total_steps - 1, "Exporting...")
@@ -165,30 +258,35 @@ def generate_mix(
         segments[0].export(buf, format="mp3", bitrate="320k")
         return buf.getvalue()
 
-    # ── Build mix ───────────────────────────────────────────────────────────
+    # ── Mix ───────────────────────────────────────────────────────────────────
     result = segments[0]
-    track_map = {t.track_id: t for t in tracks}
 
-    for i, (trans, in_seg_raw) in enumerate(zip(transitions, segments[1:])):
-        _progress(len(tracks) + i, f"Applying transition {i + 1}/{len(transitions)}...")
+    for i, (trans, in_raw) in enumerate(zip(transitions, segments[1:])):
+        label = trans.transition_type
+        _progress(len(tracks) + i, f"Transition {i + 1}/{len(transitions)} — {label}...")
 
-        bpm = trans.bpm_a or 128.0
-        fade_ms = _bars_to_ms(trans.transition_bars, bpm)
+        bpm_a = trans.bpm_a or 128.0
+        bpm_b = trans.bpm_b or bpm_a
+        fade_ms = _bars_to_ms(trans.transition_bars, bpm_a)
 
         try:
-            if trans.transition_type == "cut":
-                result = result + in_seg_raw
-            elif trans.transition_type == "filter_sweep":
-                result = _filter_sweep_transition(result, in_seg_raw, fade_ms)
-            elif trans.transition_type == "echo_out":
-                result = _echo_out_transition(result, in_seg_raw, fade_ms)
-            else:  # crossfade (default)
-                result = _crossfade_transition(result, in_seg_raw, fade_ms)
-        except Exception as e:
-            logger.warning("Transition %d failed (%s), falling back to crossfade: %s", i, trans.transition_type, e)
-            result = _crossfade_transition(result, in_seg_raw, min(fade_ms, 8_000))
+            if label == "cut":
+                result = result + in_raw
+            elif label == "filter_sweep":
+                result = _filter_sweep_transition(result, in_raw, fade_ms, bpm_a, bpm_b)
+            elif label == "echo_out":
+                result = _echo_out_transition(result, in_raw, fade_ms, bpm_a, bpm_b)
+            else:  # crossfade → professional bass-swap
+                result = _bass_swap_crossfade(result, in_raw, fade_ms, bpm_a, bpm_b)
+        except Exception as exc:
+            logger.warning(
+                "Transition %d (%s) failed — falling back to basic crossfade: %s",
+                i, label, exc,
+            )
+            cf = max(1_000, min(fade_ms, 8_000, len(result) - 500, len(in_raw) - 500))
+            result = result.append(in_raw, crossfade=cf)
 
-    # ── Export ──────────────────────────────────────────────────────────────
+    # ── Master & export ───────────────────────────────────────────────────────
     _progress(total_steps - 1, "Mastering and encoding...")
     result = _normalize_loudness(result, target_dbfs=-11.0)
     buf = io.BytesIO()
