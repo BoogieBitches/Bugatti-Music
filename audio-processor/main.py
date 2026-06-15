@@ -30,12 +30,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
+import google.generativeai as genai
+
 from analyzer import analyze_audio
 from generate import TrackSpec, TransitionSpec, generate_mix
 from transitions import compute_transitions
 
 logger = logging.getLogger("audio-processor")
 logging.basicConfig(level=logging.INFO)
+
+# ── Gemini setup ──────────────────────────────────────────────────────────────
+_GEMINI_KEY = os.environ.get("GOOGLE_AI_API_KEY", "")
+if _GEMINI_KEY:
+    genai.configure(api_key=_GEMINI_KEY)
+    _gemini = genai.GenerativeModel("gemini-1.5-flash")
+    logger.info("Gemini AI enabled")
+else:
+    _gemini = None
+    logger.warning("GOOGLE_AI_API_KEY not set — /audio/plan will be unavailable")
 
 # ── Storage directories ──────────────────────────────────────────────────────
 
@@ -126,6 +138,75 @@ async def analyze(file: UploadFile = File(...)):
     except Exception as exc:
         path.unlink(missing_ok=True)
         raise HTTPException(500, f"Analysis failed: {exc}") from exc
+
+
+class PlanRequest(BaseModel):
+    tracks: list[dict]  # [{id, name, bpm, key, camelot, energy, genre, duration}, ...]
+
+
+@app.post("/audio/plan")
+async def plan_mix(req: PlanRequest):
+    """Use Gemini AI to suggest optimal track order for a DJ set."""
+    if _gemini is None:
+        raise HTTPException(503, "Gemini AI not configured (GOOGLE_AI_API_KEY missing)")
+    if len(req.tracks) < 2:
+        raise HTTPException(400, "Need at least 2 tracks to plan a set")
+
+    lines = []
+    for i, t in enumerate(req.tracks):
+        name  = t.get("name", f"Track {i+1}")
+        bpm   = t.get("bpm", "?")
+        key   = t.get("key", t.get("camelot", "?"))
+        cam   = t.get("camelot", "?")
+        energy = t.get("energy", "?")
+        genre = t.get("genre", "?")
+        dur   = t.get("duration", t.get("durationSeconds", "?"))
+        lines.append(f"  [{i}] {name} | BPM: {bpm} | Key: {key} | Camelot: {cam} | Energy: {energy}/100 | Genre: {genre} | Duration: {dur}s")
+
+    track_list = "\n".join(lines)
+    prompt = f"""You are an expert DJ and music director. Plan the optimal track order for this club DJ set.
+
+Tracks (indices in brackets):
+{track_list}
+
+Rules:
+1. Energy arc: start moderate → build to peak (60-75% of set) → cool down at end
+2. Harmonic mixing: prefer adjacent Camelot keys (e.g. 8A→8B or 8A→9A = +1/-1 number, or same number A↔B)
+3. BPM flow: gradual tempo changes preferred; avoid >10 BPM jumps between consecutive tracks
+4. Genre cohesion: group similar genres when possible
+
+Respond with ONLY valid JSON, no markdown fences, no extra text:
+{{
+  "order": [<original indices in optimal play order>],
+  "reasoning": "<2-3 sentences explaining the chosen order>",
+  "energy_arc": "<one-line description of the energy curve>"
+}}"""
+
+    try:
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, lambda: _gemini.generate_content(prompt))
+        raw = response.text.strip()
+        # strip accidental markdown fences
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip()
+        import json as _json
+        data = _json.loads(raw)
+        # validate order contains all indices
+        n = len(req.tracks)
+        order = data.get("order", list(range(n)))
+        if sorted(order) != list(range(n)):
+            order = list(range(n))  # fallback to original order
+        return {
+            "order": order,
+            "reasoning": data.get("reasoning", ""),
+            "energy_arc": data.get("energy_arc", ""),
+        }
+    except Exception as exc:
+        logger.error("Gemini plan failed: %s", exc)
+        raise HTTPException(500, f"AI planning failed: {exc}") from exc
 
 
 class GenerateRequest(BaseModel):
