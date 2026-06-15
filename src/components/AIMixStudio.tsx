@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { WaveformPlayer } from "./WaveformPlayer";
+import { MixHistory, saveToHistory, type MixRecord } from "./MixHistory";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -247,48 +249,6 @@ function TransitionCard({plan,fromTrack,toTrack}:{plan:TransitionPlan;fromTrack:
   );
 }
 
-function AudioPlayer({jobId,durationMin}:{jobId:string;durationMin:number|null}){
-  const apiBase = AUDIO_API||"/audio";
-  const url = `${apiBase}/audio/jobs/${jobId}/download`;
-  return (
-    <div className="bs-card p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-black text-lg bs-text-gradient">Mix Ready</h2>
-        <span className="px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 text-xs font-bold border border-green-500/30">COMPLETE</span>
-      </div>
-
-      {/* Native audio player styled */}
-      <audio
-        controls
-        className="w-full rounded-xl"
-        style={{
-          accentColor:"var(--accent)",
-          filter:"invert(0.1) hue-rotate(250deg) brightness(0.95)",
-        }}
-        src={url}
-        preload="metadata"
-      >
-        Your browser does not support audio playback.
-      </audio>
-
-      <div className="flex flex-wrap gap-3">
-        <a
-          href={url}
-          download={`bugatti-mix.mp3`}
-          className="bs-button bs-button-primary px-6 py-2.5 text-sm font-bold flex items-center gap-2"
-        >
-          ⬇ Download MP3 320kbps
-        </a>
-        {durationMin&&(
-          <div className="flex items-center gap-2 text-xs text-white/40">
-            <span>🕐 ~{durationMin} min</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function AIMixStudio() {
@@ -307,8 +267,12 @@ export function AIMixStudio() {
   const [showTransitions,setShowTransitions] = useState(true);
   const [dragOverIdx,setDragOverIdx] = useState<number|null>(null);
   const [reorderIdx,setReorderIdx] = useState<number|null>(null);
+  // restored mix from history
+  const [restoredMix,setRestoredMix] = useState<{jobId:string;durationMin:number|null;apiBase:string}|null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval>|null>(null);
+  // keep a ref to tracks+style at generation time for history saving
+  const genSnapshotRef = useRef<{tracks:Track[];style:MixStyle;avgScore:number|null}|null>(null);
 
   // ── Polling ───────────────────────────────────────────────────────────────
 
@@ -327,7 +291,24 @@ export function AIMixStudio() {
           clearInterval(pollRef.current!);
           setGenerating(false);
           setDone(true);
-          setJobDuration(data.duration_min??null);
+          const durMin = data.duration_min??null;
+          setJobDuration(durMin);
+          // save to history
+          const snap = genSnapshotRef.current;
+          if(snap){
+            const styleObj = MIX_STYLES.find(s=>s.id===snap.style);
+            saveToHistory({
+              jobId:jid,
+              style:snap.style,
+              styleLabel:styleObj?.label??snap.style,
+              trackCount:snap.tracks.length,
+              trackNames:snap.tracks.map(t=>t.name),
+              avgScore:snap.avgScore,
+              durationMin:durMin,
+              createdAt:new Date().toISOString(),
+              apiBase:AUDIO_API||"/audio",
+            });
+          }
         } else if(data.status==="error"){
           clearInterval(pollRef.current!);
           setGenerating(false);
@@ -435,6 +416,8 @@ export function AIMixStudio() {
 
       const {job_id} = await res.json();
       setJobId(job_id);
+      // save snapshot for history
+      genSnapshotRef.current = {tracks:[...tracks],style:selectedStyle,avgScore};
       startPolling(job_id);
     } catch(e:unknown){
       setGenerating(false);
@@ -472,6 +455,29 @@ export function AIMixStudio() {
         <h1 className="text-5xl md:text-6xl font-black tracking-tight bs-text-gradient leading-none mb-4">AI MIX STUDIO</h1>
         <p className="text-lg text-white/50 max-w-xl mx-auto">Upload your tracks and let AI create a professional DJ mix automatically.</p>
       </div>
+
+      {/* Restored mix from history */}
+      {restoredMix&&!done&&!generating&&(
+        <div className="mb-6 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-white/30 uppercase tracking-widest">Restored from history</span>
+            <button onClick={()=>setRestoredMix(null)} className="text-xs text-white/20 hover:text-white/60 transition-colors">✕ Close</button>
+          </div>
+          <WaveformPlayer
+            url={`${restoredMix.apiBase}/audio/jobs/${restoredMix.jobId}/download`}
+            durationMin={restoredMix.durationMin}
+            downloadFilename={`bugatti-mix-${restoredMix.jobId.slice(0,8)}.mp3`}
+          />
+        </div>
+      )}
+
+      {/* Mix History */}
+      {!done&&!generating&&(
+        <MixHistory onRestore={(r)=>{
+          setRestoredMix({jobId:r.jobId,durationMin:r.durationMin,apiBase:r.apiBase});
+          window.scrollTo({top:0,behavior:"smooth"});
+        }}/>
+      )}
 
       {/* Upload Zone */}
       {!done&&(
@@ -692,7 +698,11 @@ export function AIMixStudio() {
       {/* Result */}
       {done&&jobId&&(
         <div className="space-y-4">
-          <AudioPlayer jobId={jobId} durationMin={jobDuration}/>
+          <WaveformPlayer
+            url={`${AUDIO_API||"/audio"}/audio/jobs/${jobId}/download`}
+            durationMin={jobDuration}
+            downloadFilename={`bugatti-mix-${jobId.slice(0,8)}.mp3`}
+          />
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
@@ -727,7 +737,7 @@ export function AIMixStudio() {
             </div>
           </div>
 
-          <button onClick={()=>{setTracks([]);setDone(false);setSelectedStyle(null);setPrompt("");setPromptMode(false);setJobId(null);setGenError(null);}}
+          <button onClick={()=>{setTracks([]);setDone(false);setSelectedStyle(null);setPrompt("");setPromptMode(false);setJobId(null);setGenError(null);setRestoredMix(null);genSnapshotRef.current=null;}}
             className="w-full bs-button py-3 text-sm font-semibold text-white/60 hover:text-white transition-colors">
             ← Create New Mix
           </button>
