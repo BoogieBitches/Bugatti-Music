@@ -10,6 +10,12 @@ const supabaseHost = (() => {
   }
 })();
 
+// The audio processor URL, server-side only.
+// In dev it defaults to localhost:8001.
+// In production set AUDIO_API_URL to your deployed audio-processor URL
+// (e.g. https://bugatti-audio.railway.app).
+const AUDIO_API_URL = (process.env.AUDIO_API_URL ?? "http://localhost:8001").replace(/\/$/, "");
+
 const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
@@ -28,10 +34,6 @@ const nextConfig: NextConfig = {
               pathname: "/storage/v1/object/public/**",
             },
           ]),
-      // Telegram profile photos returned by the Login Widget live at
-      // https://t.me/i/userpic/... and on the cdn4.cachetelegram.org host
-      // (varies by region). Allow both so <Image> can render avatars when
-      // we eventually surface them in the UI.
       {
         protocol: "https" as const,
         hostname: "t.me",
@@ -42,6 +44,15 @@ const nextConfig: NextConfig = {
         hostname: "*.cachetelegram.org",
       },
     ],
+  },
+
+  async rewrites() {
+    return [
+      {
+        source: "/audio/:path*",
+        destination: `${AUDIO_API_URL}/audio/:path*`,
+      },
+    ];
   },
 };
 
