@@ -69,6 +69,8 @@ class TransitionPlan:
     description: str
     from_camelot: str
     to_camelot: str
+    bpm_a: float = 128.0  # outgoing BPM (for generate endpoint)
+    bpm_b: float = 128.0  # incoming BPM (for beatmatching)
 
 
 _DESCRIPTIONS = {
@@ -119,6 +121,8 @@ def compute_transitions(tracks: list[dict]) -> list[TransitionPlan]:
             description=desc,
             from_camelot=c_a,
             to_camelot=c_b,
+            bpm_a=bpm_a,
+            bpm_b=bpm_b,
         ))
 
     return plans
