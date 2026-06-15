@@ -269,6 +269,10 @@ export function AIMixStudio() {
   const [reorderIdx,setReorderIdx] = useState<number|null>(null);
   // restored mix from history
   const [restoredMix,setRestoredMix] = useState<{jobId:string;durationMin:number|null;apiBase:string}|null>(null);
+  // AI set planner
+  const [aiPlanning,setAiPlanning] = useState(false);
+  const [aiPlan,setAiPlan] = useState<{reasoning:string;energy_arc:string}|null>(null);
+  const [aiPlanError,setAiPlanError] = useState<string|null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval>|null>(null);
   // keep a ref to tracks+style at generation time for history saving
@@ -428,6 +432,46 @@ export function AIMixStudio() {
 
   function removeTrack(id:string){setTracks(t=>t.filter(x=>x.id!==id));if(done)setDone(false);}
 
+  async function handleAiPlan(){
+    if(aiPlanning||tracks.length<2||!allAnalyzed) return;
+    setAiPlanning(true); setAiPlan(null); setAiPlanError(null);
+    const apiBase = AUDIO_API||"/audio";
+    try{
+      const payload = {
+        tracks: tracks.map(t=>({
+          id: t.trackId||t.id,
+          name: t.name,
+          bpm: t.bpm??128,
+          key: t.key,
+          camelot: t.camelot,
+          energy: t.energy??50,
+          genre: t.genre,
+          duration: t.durationSeconds??300,
+        }))
+      };
+      const res = await fetch(`${apiBase}/audio/plan`,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(payload),
+      });
+      if(!res.ok){
+        const err = await res.json().catch(()=>({detail:"Unknown error"}));
+        throw new Error(err.detail||`HTTP ${res.status}`);
+      }
+      const data:{order:number[];reasoning:string;energy_arc:string} = await res.json();
+      // reorder tracks
+      setTracks(prev=>{
+        const reordered = data.order.map(i=>prev[i]).filter(Boolean);
+        return reordered.length===prev.length ? reordered : prev;
+      });
+      setAiPlan({reasoning:data.reasoning,energy_arc:data.energy_arc});
+    } catch(e:unknown){
+      setAiPlanError(e instanceof Error ? e.message : "AI planning failed");
+    } finally{
+      setAiPlanning(false);
+    }
+  }
+
   // ── Derived state ─────────────────────────────────────────────────────────
 
   const analyzedCount = tracks.filter(t=>t.analyzed).length;
@@ -507,7 +551,19 @@ export function AIMixStudio() {
             <span className="text-sm font-semibold text-white/70">
               {tracks.length} track{tracks.length!==1?"s":""} · {analyzedCount}/{tracks.length} analyzed
             </span>
-            <button onClick={()=>fileRef.current?.click()} className="text-xs text-[var(--accent-2)] hover:text-white transition-colors">+ Add more</button>
+            <div className="flex items-center gap-3">
+              {allAnalyzed&&tracks.length>=2&&(
+                <button
+                  onClick={handleAiPlan}
+                  disabled={aiPlanning}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-[var(--accent)]/15 border border-[var(--accent)]/30 text-[var(--accent-2)] hover:bg-[var(--accent)]/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                  {aiPlanning
+                    ? <><span className="w-3 h-3 border-2 border-[var(--accent-2)] border-t-transparent rounded-full animate-spin inline-block"/>Thinking...</>
+                    : <>✨ AI Order</>}
+                </button>
+              )}
+              <button onClick={()=>fileRef.current?.click()} className="text-xs text-[var(--accent-2)] hover:text-white transition-colors">+ Add more</button>
+            </div>
           </div>
 
           <div className="hidden sm:grid grid-cols-[24px_1fr_60px_52px_72px_100px_88px_24px] gap-2 px-5 py-2 text-xs text-white/25 uppercase tracking-widest border-b border-white/5">
@@ -556,6 +612,33 @@ export function AIMixStudio() {
             ))}
           </div>
           {tracks.length>1&&<div className="px-5 py-2 border-t border-white/5 text-xs text-white/20">↕ Drag rows to reorder</div>}
+        </div>
+      )}
+
+      {/* AI Plan Result */}
+      {(aiPlan||aiPlanError)&&!done&&(
+        <div className={`bs-card px-5 py-4 mb-4 ${aiPlanError?"border-red-500/20":"border-[var(--accent)]/20"}`}>
+          {aiPlanError?(
+            <div className="flex items-center gap-2 text-red-400 text-sm">
+              <span>⚠</span><span>{aiPlanError}</span>
+            </div>
+          ):(
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black bs-text-gradient uppercase tracking-widest">✨ AI Set Plan Applied</span>
+                <button onClick={()=>setAiPlan(null)} className="ml-auto text-white/20 hover:text-white/50 transition-colors text-sm">✕</button>
+              </div>
+              {aiPlan?.energy_arc&&(
+                <div className="flex items-center gap-2 text-xs text-white/50">
+                  <span className="text-[var(--accent-2)]">⚡</span>
+                  <span>{aiPlan.energy_arc}</span>
+                </div>
+              )}
+              {aiPlan?.reasoning&&(
+                <p className="text-xs text-white/40 leading-relaxed">{aiPlan.reasoning}</p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
