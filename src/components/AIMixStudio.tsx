@@ -857,7 +857,7 @@ export function AIMixStudio({
               {!isLoggedIn&&(
                 <p className="mt-3 text-xs text-white/30">
                   Already subscribed?{" "}
-                  <a href="/auth/login" className="text-[var(--accent-2)] hover:underline">Log in</a>
+                  <a href="/login" className="text-[var(--accent-2)] hover:underline">Log in</a>
                 </p>
               )}
             </div>
