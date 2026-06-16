@@ -254,7 +254,26 @@ function TransitionCard({plan,fromTrack,toTrack}:{plan:TransitionPlan;fromTrack:
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function AIMixStudio() {
+interface AIMixStudioProps {
+  userRole?: "user" | "admin";
+  isPremium?: boolean;
+  generationsUsed?: number;
+  isLoggedIn?: boolean;
+}
+
+export function AIMixStudio({
+  userRole = "user",
+  isPremium = false,
+  generationsUsed = 0,
+  isLoggedIn = false,
+}: AIMixStudioProps) {
+  const FREE_LIMIT = 1;
+  const isAdmin = userRole === "admin";
+  const hasUnlimited = isAdmin || isPremium;
+  // Track locally so the UI updates immediately after first use without reload
+  const [localGenerationsUsed, setLocalGenerationsUsed] = useState(generationsUsed);
+  const quotaExceeded = !hasUnlimited && localGenerationsUsed >= FREE_LIMIT;
+
   const [tracks,setTracks] = useState<Track[]>([]);
   const [dragging,setDragging] = useState(false);
   const [selectedStyle,setSelectedStyle] = useState<MixStyle|null>(null);
@@ -399,6 +418,26 @@ export function AIMixStudio() {
     if(missingStore.length>0){
       setGenError(`${missingStore.length} track${missingStore.length>1?"s":""} not uploaded to server yet. Re-analyze them first (click ↺ next to the track).`);
       return;
+    }
+
+    // Server-side quota check (cannot be bypassed)
+    if(!hasUnlimited){
+      try{
+        const qRes = await fetch("/api/mix/use-generation",{method:"POST"});
+        const qData = await qRes.json();
+        if(!qRes.ok||!qData.allowed){
+          if(qData.reason==="not_authenticated"){
+            setGenError("Please log in to generate a mix.");
+          } else {
+            setLocalGenerationsUsed(qData.generations_used??1);
+          }
+          return;
+        }
+        setLocalGenerationsUsed(qData.generations_used??1);
+      } catch {
+        setGenError("Could not verify your quota. Check your connection and try again.");
+        return;
+      }
     }
 
     setGenerating(true); setGenProgress(2); setGenMessage("Submitting tracks...");
@@ -788,11 +827,47 @@ export function AIMixStudio() {
             </div>
           )}
 
-          <button onClick={handleGenerate} disabled={!selectedStyle}
-            className={`w-full bs-button bs-button-primary py-5 text-lg font-black tracking-wide transition-all duration-200
-              ${!selectedStyle?"opacity-30 cursor-not-allowed":"hover:scale-[1.01]"}`}>
-            GENERATE MIX
-          </button>
+          {/* Quota banner for free users */}
+          {!hasUnlimited&&!quotaExceeded&&(
+            <div className="mb-4 px-4 py-3 rounded-lg bg-white/5 border border-white/10 flex items-center gap-3">
+              <span className="text-2xl">🎁</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-white">1 free generation</div>
+                <div className="text-xs text-white/40">Subscribe for unlimited AI mixes</div>
+              </div>
+              <span className="shrink-0 px-2 py-0.5 rounded-full bg-green-500/20 border border-green-500/30 text-green-300 text-xs font-bold">
+                {localGenerationsUsed}/{FREE_LIMIT} used
+              </span>
+            </div>
+          )}
+
+          {/* Paywall — quota exceeded */}
+          {quotaExceeded?(
+            <div className="rounded-2xl overflow-hidden border border-[var(--accent)]/30 bg-gradient-to-br from-[var(--accent)]/10 to-purple-900/20 p-6 text-center">
+              <div className="text-3xl mb-3">🔒</div>
+              <div className="text-lg font-black text-white mb-1">Free generation used</div>
+              <div className="text-sm text-white/50 mb-5">
+                You&apos;ve used your 1 free AI mix.<br/>Subscribe to unlock unlimited generations.
+              </div>
+              <a href="/pricing"
+                className="inline-block w-full py-4 rounded-xl text-base font-black tracking-wide transition-all duration-200 hover:scale-[1.02]"
+                style={{background:"linear-gradient(135deg,var(--accent),var(--accent-2))",color:"#000"}}>
+                UPGRADE TO PREMIUM →
+              </a>
+              {!isLoggedIn&&(
+                <p className="mt-3 text-xs text-white/30">
+                  Already subscribed?{" "}
+                  <a href="/auth/login" className="text-[var(--accent-2)] hover:underline">Log in</a>
+                </p>
+              )}
+            </div>
+          ):(
+            <button onClick={handleGenerate} disabled={!selectedStyle}
+              className={`w-full bs-button bs-button-primary py-5 text-lg font-black tracking-wide transition-all duration-200
+                ${!selectedStyle?"opacity-30 cursor-not-allowed":"hover:scale-[1.01]"}`}>
+              GENERATE MIX
+            </button>
+          )}
         </>
       )}
 
