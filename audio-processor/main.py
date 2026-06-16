@@ -30,8 +30,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-import google.generativeai as genai
-
 from analyzer import analyze_audio
 from generate import TrackSpec, TransitionSpec, generate_mix
 from transitions import compute_transitions
@@ -39,14 +37,16 @@ from transitions import compute_transitions
 logger = logging.getLogger("audio-processor")
 logging.basicConfig(level=logging.INFO)
 
-# ── Gemini setup ──────────────────────────────────────────────────────────────
+# ── Gemini setup (pure HTTP — no SDK dependency) ──────────────────────────────
 _GEMINI_KEY = os.environ.get("GOOGLE_AI_API_KEY", "")
+_GEMINI_MODEL = "gemini-2.5-flash-lite"
+_GEMINI_URL = (
+    f"https://generativelanguage.googleapis.com/v1beta/models/"
+    f"{_GEMINI_MODEL}:generateContent?key={_GEMINI_KEY}"
+)
 if _GEMINI_KEY:
-    genai.configure(api_key=_GEMINI_KEY)
-    _gemini = genai.GenerativeModel("gemini-2.5-flash-lite")
-    logger.info("Gemini AI enabled")
+    logger.info("Gemini AI enabled (REST, model=%s)", _GEMINI_MODEL)
 else:
-    _gemini = None
     logger.warning("GOOGLE_AI_API_KEY not set — /audio/plan will be unavailable")
 
 # ── Storage directories ──────────────────────────────────────────────────────
@@ -146,59 +146,74 @@ class PlanRequest(BaseModel):
 
 @app.post("/audio/plan")
 async def plan_mix(req: PlanRequest):
-    """Use Gemini AI to suggest optimal track order for a DJ set."""
-    if _gemini is None:
+    """Use Gemini AI (via REST) to suggest optimal track order for a DJ set."""
+    import json as _json
+    import urllib.request as _urlreq
+
+    if not _GEMINI_KEY:
         raise HTTPException(503, "Gemini AI not configured (GOOGLE_AI_API_KEY missing)")
     if len(req.tracks) < 2:
         raise HTTPException(400, "Need at least 2 tracks to plan a set")
 
     lines = []
     for i, t in enumerate(req.tracks):
-        name  = t.get("name", f"Track {i+1}")
-        bpm   = t.get("bpm", "?")
-        key   = t.get("key", t.get("camelot", "?"))
-        cam   = t.get("camelot", "?")
+        name   = t.get("name", f"Track {i+1}")
+        bpm    = t.get("bpm", "?")
+        key    = t.get("key", t.get("camelot", "?"))
+        cam    = t.get("camelot", "?")
         energy = t.get("energy", "?")
-        genre = t.get("genre", "?")
-        dur   = t.get("duration", t.get("durationSeconds", "?"))
-        lines.append(f"  [{i}] {name} | BPM: {bpm} | Key: {key} | Camelot: {cam} | Energy: {energy}/100 | Genre: {genre} | Duration: {dur}s")
+        genre  = t.get("genre", "?")
+        dur    = t.get("duration", t.get("durationSeconds", "?"))
+        lines.append(
+            f"  [{i}] {name} | BPM: {bpm} | Key: {key} | Camelot: {cam}"
+            f" | Energy: {energy}/100 | Genre: {genre} | Duration: {dur}s"
+        )
 
     track_list = "\n".join(lines)
-    prompt = f"""You are an expert DJ and music director. Plan the optimal track order for this club DJ set.
+    prompt = (
+        "You are an expert DJ and music director. Plan the optimal track order for this club DJ set.\n\n"
+        f"Tracks (indices in brackets):\n{track_list}\n\n"
+        "Rules:\n"
+        "1. Energy arc: start moderate → build to peak (60-75% of set) → cool down at end\n"
+        "2. Harmonic mixing: prefer adjacent Camelot keys (e.g. 8A→8B or 8A→9A)\n"
+        "3. BPM flow: gradual tempo changes preferred; avoid >10 BPM jumps\n"
+        "4. Genre cohesion: group similar genres when possible\n\n"
+        'Respond with ONLY valid JSON, no markdown fences, no extra text:\n'
+        '{"order":[<original indices in optimal play order>],'
+        '"reasoning":"<2-3 sentences>","energy_arc":"<one-line>"}'
+    )
 
-Tracks (indices in brackets):
-{track_list}
+    payload = _json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 512},
+    }).encode()
 
-Rules:
-1. Energy arc: start moderate → build to peak (60-75% of set) → cool down at end
-2. Harmonic mixing: prefer adjacent Camelot keys (e.g. 8A→8B or 8A→9A = +1/-1 number, or same number A↔B)
-3. BPM flow: gradual tempo changes preferred; avoid >10 BPM jumps between consecutive tracks
-4. Genre cohesion: group similar genres when possible
-
-Respond with ONLY valid JSON, no markdown fences, no extra text:
-{{
-  "order": [<original indices in optimal play order>],
-  "reasoning": "<2-3 sentences explaining the chosen order>",
-  "energy_arc": "<one-line description of the energy curve>"
-}}"""
+    def _call_gemini() -> str:
+        req_obj = _urlreq.Request(
+            _GEMINI_URL,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with _urlreq.urlopen(req_obj, timeout=30) as resp:
+            body = _json.loads(resp.read())
+        return body["candidates"][0]["content"]["parts"][0]["text"]
 
     try:
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, lambda: _gemini.generate_content(prompt))
-        raw = response.text.strip()
+        raw = await loop.run_in_executor(None, _call_gemini)
+        raw = raw.strip()
         # strip accidental markdown fences
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
             raw = raw.strip()
-        import json as _json
         data = _json.loads(raw)
-        # validate order contains all indices
         n = len(req.tracks)
         order = data.get("order", list(range(n)))
         if sorted(order) != list(range(n)):
-            order = list(range(n))  # fallback to original order
+            order = list(range(n))
         return {
             "order": order,
             "reasoning": data.get("reasoning", ""),
