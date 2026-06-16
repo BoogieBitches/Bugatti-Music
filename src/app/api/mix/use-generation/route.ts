@@ -58,19 +58,28 @@ export async function POST() {
     );
   }
 
-  const { error: updateErr } = await admin
+  // Atomic increment: WHERE mix_generations_count = 0 ensures only one concurrent
+  // request can succeed, preventing double-use even if two tabs race simultaneously.
+  const { data: updated, error: updateErr } = await admin
     .from("profiles")
-    .update({ mix_generations_count: profile.mix_generations_count + 1 })
-    .eq("id", user.id);
+    .update({ mix_generations_count: 1 })
+    .eq("id", user.id)
+    .eq("mix_generations_count", 0)
+    .select("mix_generations_count")
+    .single();
 
-  if (updateErr) {
-    return NextResponse.json({ allowed: false, reason: "update_failed" }, { status: 500 });
+  if (updateErr || !updated) {
+    // Another concurrent request already incremented — quota now used
+    return NextResponse.json(
+      { allowed: false, reason: "quota_exceeded", generations_used: 1 },
+      { status: 403 }
+    );
   }
 
   return NextResponse.json({
     allowed: true,
     role: profile.role,
     is_premium: false,
-    generations_used: profile.mix_generations_count + 1,
+    generations_used: 1,
   });
 }
