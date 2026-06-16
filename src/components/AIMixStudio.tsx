@@ -332,6 +332,7 @@ export function AIMixStudio() {
       const res = await fetch(`${apiBase}/audio/analyze`,{method:"POST",body:form});
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const d = await res.json();
+      if(!d.track_id) throw new Error("No track_id in response");
       return {
         trackId:d.track_id,
         bpm:d.bpm??null, key:d.key??null, camelot:d.camelot??null,
@@ -339,8 +340,8 @@ export function AIMixStudio() {
         durationSeconds:d.duration_seconds, sections:d.sections,
         analyzed:true, analyzing:false, error:undefined,
       };
-    } catch {
-      return {...fakeAnalysis(), error:undefined};
+    } catch(err) {
+      return {analyzed:false, analyzing:false, error:err instanceof Error ? err.message : "Analysis failed"};
     }
   }
 
@@ -379,8 +380,24 @@ export function AIMixStudio() {
 
   // ── Generate ──────────────────────────────────────────────────────────────
 
+  async function retryAnalyze(trackId: string) {
+    const track = tracks.find(t=>t.id===trackId);
+    if(!track?.file) return;
+    setTracks(t=>t.map(x=>x.id===trackId?{...x,analyzing:true,error:undefined}:x));
+    const analysis = await analyzeTrackFile(track.file);
+    setTracks(t=>t.map(x=>x.id===trackId?{...x,...analysis}:x));
+  }
+
   async function handleGenerate(){
     if(!selectedStyle||tracks.length===0) return;
+
+    // Guard: all tracks must have a backend trackId
+    const missingStore = tracks.filter(t=>!t.trackId);
+    if(missingStore.length>0){
+      setGenError(`${missingStore.length} track${missingStore.length>1?"s":""} not uploaded to server yet. Re-analyze them first (click ↺ next to the track).`);
+      return;
+    }
+
     setGenerating(true); setGenProgress(2); setGenMessage("Submitting tracks...");
     setDone(false); setJobId(null); setGenError(null);
 
@@ -390,8 +407,8 @@ export function AIMixStudio() {
     try {
       const payload = {
         tracks: tracks.map(t=>({
-          track_id: t.trackId||t.id,
-          id: t.trackId||t.id,
+          track_id: t.trackId!,
+          id: t.trackId!,
           bpm: t.bpm, energy: t.energy,
           duration_seconds: t.durationSeconds||300,
           sections: t.sections||{},
@@ -603,6 +620,17 @@ export function AIMixStudio() {
                     <div className="hidden md:block w-24 shrink-0"><EnergyBar value={track.energy!}/></div>
                     <div className="hidden lg:block text-xs text-white/40 w-20 text-right truncate shrink-0">{track.genre}</div>
                   </>
+                ):track.error?(
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className="text-xs text-red-400 truncate" title={track.error}>⚠ {track.error}</span>
+                    {track.file&&(
+                      <button onClick={()=>retryAnalyze(track.id)}
+                        disabled={track.analyzing}
+                        className="shrink-0 text-xs px-2 py-0.5 rounded bg-[var(--accent)]/15 border border-[var(--accent)]/30 text-[var(--accent-2)] hover:bg-[var(--accent)]/25 transition-all disabled:opacity-40">
+                        ↺ Retry
+                      </button>
+                    )}
+                  </div>
                 ):(
                   <div className="text-xs text-white/25 italic">{track.analyzing?"Analyzing...":"Queued"}</div>
                 )}
