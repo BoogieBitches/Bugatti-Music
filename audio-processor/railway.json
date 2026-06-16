@@ -6,7 +6,7 @@
     "nixpacksPlan": {
       "phases": {
         "setup": {
-          "nixPkgs": ["rubberband", "ffmpeg"]
+          "nixPkgs": ["libsndfile", "rubberband", "ffmpeg"]
         }
       },
       "variables": {
