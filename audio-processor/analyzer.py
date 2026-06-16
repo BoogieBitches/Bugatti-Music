@@ -74,13 +74,15 @@ def classify_genre(bpm: float, energy: int) -> str:
 
 
 def analyze_audio(file_path: str) -> dict:
-    y_short, sr = librosa.load(file_path, duration=90, mono=True, sr=22050)
+    # res_type='scipy' avoids the resampy dependency (not always available on Railway).
+    # soundfile is used for loading; if libsndfile is missing, librosa falls back to audioread.
+    y_short, sr = librosa.load(file_path, duration=90, mono=True, sr=22050, res_type='scipy')
 
     tempo_arr, _ = librosa.beat.beat_track(y=y_short, sr=sr)
     bpm = float(tempo_arr[0]) if hasattr(tempo_arr, "__len__") else float(tempo_arr)
     bpm = round(bpm, 1)
 
-    y_full, sr_full = librosa.load(file_path, mono=True, sr=22050)
+    y_full, sr_full = librosa.load(file_path, mono=True, sr=22050, res_type='scipy')
     duration = float(librosa.get_duration(y=y_full, sr=sr_full))
     minutes = int(duration // 60)
     seconds = int(duration % 60)
