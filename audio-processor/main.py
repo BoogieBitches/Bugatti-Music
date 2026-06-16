@@ -122,7 +122,7 @@ async def _save_upload(file: UploadFile) -> tuple[str, str, Path]:
 
 @app.get("/audio/health")
 def health():
-    return {"status": "ok", "service": "audio-processor"}
+    return {"status": "ok", "service": "audio-processor", "loader": "pydub"}
 
 
 @app.post("/audio/analyze")
