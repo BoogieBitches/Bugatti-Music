@@ -150,7 +150,10 @@ function fmtBytes(b:number){return b<1024*1024?`${(b/1024).toFixed(0)} KB`:`${(b
 function scoreColor(s:number){return s>=80?"#22c55e":s>=60?"#eab308":"#ef4444";}
 function scoreLabel(s:number){return s>=80?"Perfect":s>=65?"Good":s>=50?"OK":"Hard";}
 
-const AUDIO_API = (process.env.NEXT_PUBLIC_AUDIO_API_URL??"").replace(/\/$/,"");
+// Railway URL is the public fallback so production works without extra Vercel env vars.
+// Override by setting NEXT_PUBLIC_AUDIO_API_URL if the Railway URL ever changes.
+const RAILWAY_AUDIO_URL = "https://vivacious-celebration-production-9ee8.up.railway.app";
+const AUDIO_API = (process.env.NEXT_PUBLIC_AUDIO_API_URL || RAILWAY_AUDIO_URL).replace(/\/$/,"");
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
