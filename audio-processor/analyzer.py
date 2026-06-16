@@ -1,7 +1,6 @@
-"""Audio analysis — loads via pydub/ffmpeg (no libsndfile required)."""
 import librosa
 import numpy as np
-from pydub import AudioSegment
+import os
 
 
 CAMELOT_MINOR = {0: "8A", 1: "3A", 2: "10A", 3: "5A", 4: "12A", 5: "7A",
@@ -12,22 +11,6 @@ KEY_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 MAJOR_PROFILE = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
 MINOR_PROFILE = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
-
-_TARGET_SR = 22050
-
-
-def _load_audio(file_path: str, duration_sec: float | None = None) -> tuple[np.ndarray, int]:
-    """
-    Load audio with pydub (uses ffmpeg) — works on any platform without libsndfile.
-    Returns (mono float32 array normalised to [-1, 1], sample_rate=22050).
-    """
-    seg = AudioSegment.from_file(file_path)
-    if duration_sec is not None:
-        seg = seg[: int(duration_sec * 1000)]
-    seg = seg.set_frame_rate(_TARGET_SR).set_channels(1)
-    raw = np.array(seg.get_array_of_samples(), dtype=np.float32)
-    max_val = float(2 ** (seg.sample_width * 8 - 1))
-    return raw / max_val, _TARGET_SR
 
 
 def detect_key(y: np.ndarray, sr: int) -> tuple[str, str]:
@@ -91,16 +74,14 @@ def classify_genre(bpm: float, energy: int) -> str:
 
 
 def analyze_audio(file_path: str) -> dict:
-    # Load short clip for BPM / key / energy (fast)
-    y_short, sr = _load_audio(file_path, duration_sec=90)
+    y_short, sr = librosa.load(file_path, duration=90, mono=True, sr=22050)
 
     tempo_arr, _ = librosa.beat.beat_track(y=y_short, sr=sr)
     bpm = float(tempo_arr[0]) if hasattr(tempo_arr, "__len__") else float(tempo_arr)
     bpm = round(bpm, 1)
 
-    # Full load for duration only
-    y_full, sr_full = _load_audio(file_path)
-    duration = len(y_full) / sr_full
+    y_full, sr_full = librosa.load(file_path, mono=True, sr=22050)
+    duration = float(librosa.get_duration(y=y_full, sr=sr_full))
     minutes = int(duration // 60)
     seconds = int(duration % 60)
 
