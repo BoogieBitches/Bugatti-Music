@@ -3,7 +3,7 @@ DJ mix generation engine — professional edition v4.
 
 Key features:
   - Phrase-aligned transitions: snaps start to the nearest 8-bar boundary.
-  - High-quality BPM beatmatching via pyrubberband (falls back to librosa).
+  - High-quality BPM beatmatching via pyrubberband (falls back to scipy resample).
   - Scipy Butterworth 3-band EQ crossfade — mirrors a real DJ mixer:
       LOW  (0 – 200 Hz)   kick / bass
       MID  (200 – 4000 Hz) melody / harmony
@@ -18,7 +18,6 @@ import logging
 from dataclasses import dataclass
 from typing import Literal
 
-import librosa
 import numpy as np
 from scipy import signal as sp
 from pydub import AudioSegment
@@ -32,7 +31,7 @@ try:
     logger.info("pyrubberband available — high-quality time-stretch enabled")
 except Exception:
     _HAS_PYRB = False
-    logger.info("pyrubberband not found — falling back to librosa time-stretch")
+    logger.info("pyrubberband not found — falling back to scipy resample")
 
 TransitionType = Literal["cut", "crossfade", "filter_sweep", "echo_out"]
 
@@ -100,7 +99,7 @@ def _phrase_aligned_split(
     min_tail_ms: int,
     phrase_bars: int = 8,
 ) -> tuple[AudioSegment, AudioSegment]:
-    """Split seg at the nearest phrase boundary that still leaves ≥ min_tail_ms."""
+    """Split seg at the nearest phrase boundary that still leaves >= min_tail_ms."""
     raw_split = len(seg) - min_tail_ms
     snapped = _snap_to_phrase(raw_split, bpm, phrase_bars)
     snapped = max(0, min(snapped, len(seg) - min_tail_ms))
@@ -119,14 +118,12 @@ def _float_to_seg(arr: np.ndarray, sr: int, channels: int) -> AudioSegment:
 
 
 def _butter_coeffs(cutoff: float, sr: int, btype: str, order: int = 4):
-    """Return (b, a) Butterworth filter coefficients."""
     nyq = sr / 2.0
     norm = float(np.clip(cutoff / nyq, 1e-4, 1 - 1e-4))
     return sp.butter(order, norm, btype=btype)
 
 
 def _band_coeffs(low: float, high: float, sr: int, order: int = 4):
-    """Return (b, a) bandpass Butterworth coefficients."""
     nyq = sr / 2.0
     lo = float(np.clip(low / nyq, 1e-4, 1 - 1e-4))
     hi = float(np.clip(high / nyq, 1e-4, 1 - 1e-4))
@@ -136,7 +133,6 @@ def _band_coeffs(low: float, high: float, sr: int, order: int = 4):
 
 
 def _filtfilt_channels(raw: np.ndarray, channels: int, b, a) -> np.ndarray:
-    """Apply filtfilt to each channel of an interleaved numpy array."""
     if channels == 2:
         L = sp.filtfilt(b, a, raw[0::2]).astype(np.float32)
         R = sp.filtfilt(b, a, raw[1::2]).astype(np.float32)
@@ -150,21 +146,18 @@ def _filtfilt_channels(raw: np.ndarray, channels: int, b, a) -> np.ndarray:
 
 
 def _eq_lp(seg: AudioSegment, cutoff: float = LOW_CUTOFF) -> AudioSegment:
-    """Low-pass: keep only bass/kick (≤ cutoff Hz)."""
     b, a = _butter_coeffs(cutoff, seg.frame_rate, "low")
     raw = _seg_to_float(seg)
     return _float_to_seg(_filtfilt_channels(raw, seg.channels, b, a), seg.frame_rate, seg.channels)
 
 
 def _eq_hp(seg: AudioSegment, cutoff: float = LOW_CUTOFF) -> AudioSegment:
-    """High-pass: remove bass (≥ cutoff Hz)."""
     b, a = _butter_coeffs(cutoff, seg.frame_rate, "high")
     raw = _seg_to_float(seg)
     return _float_to_seg(_filtfilt_channels(raw, seg.channels, b, a), seg.frame_rate, seg.channels)
 
 
 def _eq_bp(seg: AudioSegment, low: float = LOW_CUTOFF, high: float = HIGH_CUTOFF) -> AudioSegment:
-    """Bandpass: keep only mids."""
     coeffs = _band_coeffs(low, high, seg.frame_rate)
     if coeffs is None:
         return seg
@@ -174,14 +167,12 @@ def _eq_bp(seg: AudioSegment, low: float = LOW_CUTOFF, high: float = HIGH_CUTOFF
 
 
 def _eq_lm(seg: AudioSegment) -> AudioSegment:
-    """Low + Mid: keep everything below HIGH_CUTOFF Hz (remove only air)."""
     b, a = _butter_coeffs(HIGH_CUTOFF, seg.frame_rate, "low")
     raw = _seg_to_float(seg)
     return _float_to_seg(_filtfilt_channels(raw, seg.channels, b, a), seg.frame_rate, seg.channels)
 
 
 def _eq_mh(seg: AudioSegment) -> AudioSegment:
-    """Mid + High: remove only bass."""
     return _eq_hp(seg, cutoff=LOW_CUTOFF)
 
 
@@ -190,11 +181,9 @@ def _eq_mh(seg: AudioSegment) -> AudioSegment:
 def _time_stretch_zone(seg: AudioSegment, source_bpm: float, target_bpm: float) -> AudioSegment:
     """
     Time-stretch a short zone to target_bpm.
-    pyrubberband rate convention: output_duration / input_duration
-      → to speed up: source_bpm / target_bpm  (< 1 when target > source)
-    librosa rate convention: output_speed_factor
-      → to speed up: target_bpm / source_bpm  (> 1 when target > source)
-    Only applied when BPM delta is 2–15%.
+    pyrubberband: high quality pitch-preserving stretch.
+    Fallback: scipy resample (changes pitch slightly but no system deps).
+    Only applied when BPM delta is 2-15%.
     """
     if source_bpm <= 0 or target_bpm <= 0:
         return seg
@@ -214,15 +203,17 @@ def _time_stretch_zone(seg: AudioSegment, source_bpm: float, target_bpm: float) 
             else:
                 out = pyrb.time_stretch(raw, sr, ratio_pyrb).astype(np.float32)
         else:
+            # scipy resample fallback — no system deps required
+            new_len = int(round(len(raw) / ratio_lib))
             if seg.channels == 2:
-                L = librosa.effects.time_stretch(raw[0::2], rate=ratio_lib)
-                R = librosa.effects.time_stretch(raw[1::2], rate=ratio_lib)
+                L = sp.resample(raw[0::2], int(round(len(raw[0::2]) / ratio_lib))).astype(np.float32)
+                R = sp.resample(raw[1::2], int(round(len(raw[1::2]) / ratio_lib))).astype(np.float32)
                 n = min(len(L), len(R))
                 out = np.empty(n * 2, dtype=np.float32)
                 out[0::2] = L[:n]
                 out[1::2] = R[:n]
             else:
-                out = librosa.effects.time_stretch(raw, rate=ratio_lib)
+                out = sp.resample(raw, new_len).astype(np.float32)
 
         int16 = (np.clip(out, -1.0, 1.0) * 32767).astype(np.int16)
         return AudioSegment(int16.tobytes(), frame_rate=sr, sample_width=2, channels=seg.channels)
@@ -240,38 +231,15 @@ def _three_band_crossfade(
     bpm_a: float = 128.0,
     bpm_b: float = 128.0,
 ) -> AudioSegment:
-    """
-    3-band DJ mixer crossfade with phrase alignment + beatmatching.
-
-    Mirrors what a professional DJ does on a 3-band EQ mixer:
-
-    Phase 1 — "Bass in" (0 → 33% of transition):
-      OUT: full spectrum (-1 dB)
-      IN:  LOW only (≤200 Hz) — brings in kick/bass under the outgoing track.
-           Beatmatched to bpm_a so kick hits align.
-
-    Phase 2 — "Bass swap" (33% → 66%):
-      OUT: MID + HIGH (≥200 Hz), bass cut (-2 dB)
-           Listeners still hear melody/harmony of outgoing track.
-      IN:  LOW + MID (≤4 kHz) — groove is fully present, no high-end clash.
-
-    Phase 3 — "Air out" (66% → 100%):
-      OUT: HIGH only (≥4 kHz), fading to silence
-           Only hi-hats/air remain — elegant exit.
-      IN:  Full spectrum, fading in from slight cut.
-    """
     min_tail = max(6_000, min(fade_ms, (min(len(out_seg), len(in_seg)) - 2_000)))
     out_body, out_tail = _phrase_aligned_split(out_seg, bpm_a, min_tail, phrase_bars=8)
-    T = len(out_tail)        # actual transition zone length
+    T = len(out_tail)
     t1, t2 = T // 3, (2 * T) // 3
 
     in_head_raw = in_seg[:T]
     in_rest = in_seg[T:]
-
-    # Beatmatch incoming zone
     in_head = _pad_or_trim(_time_stretch_zone(in_head_raw, bpm_b, bpm_a), T)
 
-    # ── Phase 1: outgoing full + incoming bass only ───────────────────────────
     try:
         p1_out = out_tail[:t1].apply_gain(-1)
         p1_in  = _eq_lp(in_head[:t1]).apply_gain(0)
@@ -279,7 +247,6 @@ def _three_band_crossfade(
     except Exception:
         phase1 = out_tail[:t1].overlay(in_head[:t1].apply_gain(-6))
 
-    # ── Phase 2: outgoing mid+high + incoming low+mid ─────────────────────────
     try:
         p2_out = _eq_mh(out_tail[t1:t2]).apply_gain(-2)
         p2_in  = _eq_lm(in_head[t1:t2]).apply_gain(-1)
@@ -287,7 +254,6 @@ def _three_band_crossfade(
     except Exception:
         phase2 = out_tail[t1:t2].apply_gain(-3).overlay(in_head[t1:t2].apply_gain(-3))
 
-    # ── Phase 3: outgoing highs only fading out + incoming full fading in ─────
     try:
         p3_out = _eq_hp(out_tail[t2:], cutoff=HIGH_CUTOFF).fade_out(T - t2)
         p3_in  = in_head[t2:].fade_in((T - t2) // 3)
@@ -305,11 +271,6 @@ def _filter_sweep_transition(
     bpm_a: float = 128.0,
     bpm_b: float = 128.0,
 ) -> AudioSegment:
-    """
-    Phrase-aligned Butterworth high-pass sweep on outgoing tail (simulates
-    sweeping the HP filter on a CDJ/mixer), then crossfade into beatmatched
-    incoming track.
-    """
     min_tail = max(4_000, min(fade_ms, min(len(out_seg), len(in_seg)) - 1_000))
     out_body, out_tail = _phrase_aligned_split(out_seg, bpm_a, min_tail, phrase_bars=8)
 
@@ -333,10 +294,6 @@ def _echo_out_transition(
     bpm_a: float = 128.0,
     bpm_b: float = 128.0,
 ) -> AudioSegment:
-    """
-    Phrase-aligned (16-bar) reverb-tail fade on outgoing; incoming fades in
-    with beatmatching. Used when tracks have very different energy/key.
-    """
     min_tail = max(8_000, min(fade_ms, min(len(out_seg), len(in_seg)) - 2_000))
     out_body, out_tail = _phrase_aligned_split(out_seg, bpm_a, min_tail, phrase_bars=16)
     out_tail_faded = out_tail.fade_out(len(out_tail))
@@ -370,7 +327,6 @@ def generate_mix(
             pct = min(95, int(step / total_steps * 100))
             progress_callback(pct, msg)
 
-    # ── Load ──────────────────────────────────────────────────────────────────
     segments: list[AudioSegment] = []
     for i, spec in enumerate(tracks):
         _progress(i, f"Loading {spec.track_id[:8]}...")
@@ -389,7 +345,6 @@ def generate_mix(
         segments[0].export(buf, format="mp3", bitrate="320k")
         return buf.getvalue()
 
-    # ── Mix ───────────────────────────────────────────────────────────────────
     result = segments[0]
 
     for i, (trans, in_raw) in enumerate(zip(transitions, segments[1:])):
@@ -410,7 +365,7 @@ def generate_mix(
                 result = _filter_sweep_transition(result, in_raw, fade_ms, bpm_a, bpm_b)
             elif label == "echo_out":
                 result = _echo_out_transition(result, in_raw, fade_ms, bpm_a, bpm_b)
-            else:  # crossfade → 3-band DJ crossfade
+            else:
                 result = _three_band_crossfade(result, in_raw, fade_ms, bpm_a, bpm_b)
         except Exception as exc:
             logger.warning(
@@ -420,7 +375,6 @@ def generate_mix(
             cf = max(1_000, min(fade_ms, 8_000, len(result) - 500, len(in_raw) - 500))
             result = result.append(in_raw, crossfade=cf)
 
-    # ── Master & export ───────────────────────────────────────────────────────
     _progress(total_steps - 1, "Mastering and encoding...")
     result = _normalize_loudness(result, target_dbfs=-11.0)
     buf = io.BytesIO()
