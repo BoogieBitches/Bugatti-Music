@@ -75,7 +75,7 @@ def _ensure_stereo(seg: AudioSegment) -> AudioSegment:
 
 def _normalize_loudness(seg: AudioSegment, target_dbfs: float = -14.0) -> AudioSegment:
     diff = target_dbfs - seg.dBFS
-    return seg.apply_gain(min(diff, 6))
+    return seg.apply_gain(max(-6.0, min(diff, 9.0)))
 
 
 def _pad_or_trim(seg: AudioSegment, target_ms: int) -> AudioSegment:
@@ -208,15 +208,15 @@ def _time_stretch_to_bpm(seg: AudioSegment, source_bpm: float, target_bpm: float
         )
         if r.returncode != 0:
             logger.error(
-                "ffmpeg atempo failed (ratio=%.4f): %s",
-                ratio, r.stderr.decode(errors="replace")[-400:],
+                "ffmpeg atempo FAILED (ratio=%.4f) stderr: %s",
+                ratio, r.stderr.decode(errors="replace")[-600:],
             )
-            return seg
+            return seg   # fall back to original tempo — DO NOT silence the track
         result = AudioSegment.from_file(tmp_out, format="wav")
         logger.info("BPM sync %.1f -> %.1f (atempo %.4f)", source_bpm, target_bpm, ratio)
         return result
     except Exception as exc:
-        logger.warning("ffmpeg atempo error (%.3f): %s — using original tempo", ratio, exc)
+        logger.warning("ffmpeg atempo error (%.3f): %s — keeping original tempo", ratio, exc)
         return seg
     finally:
         for p in (tmp_in, tmp_out):
@@ -349,7 +349,7 @@ def _three_band_crossfade(
     # (was: LP at 200 Hz → inaudible.  Now bass+mids are clearly heard.)
     try:
         p1_out = out_tail[:t1].apply_gain(-1)
-        p1_in  = _eq_lm(in_head[:t1]).apply_gain(-1)   # was -3, now audible immediately
+        p1_in  = _eq_lm(in_head[:t1]).apply_gain(-1)   # louder so second track is audible fast
         phase1 = p1_out.overlay(p1_in)
     except Exception:
         phase1 = out_tail[:t1].overlay(in_head[:t1].apply_gain(-6))
@@ -418,7 +418,7 @@ def _echo_out_transition(
     in_slice         = in_seg[:overlap_ms]
     in_head_matched  = _pad_or_trim(_time_stretch_zone(in_slice, bpm_b, bpm_a), overlap_ms)
     # Fade incoming in over the first half of the overlap (max 16 s)
-    fade_in_ms       = min(overlap_ms // 6, 4_000)   # short fade-in so incoming is audible fast
+    fade_in_ms       = min(overlap_ms // 6, 4_000)   # short: incoming audible fast
     in_full          = in_head_matched.fade_in(fade_in_ms) + in_seg[overlap_ms:]
 
     ov    = min(overlap_ms, len(out_tail_faded), len(in_full))
@@ -501,6 +501,7 @@ def generate_mix(
     if abs(bpm0 - master_bpm) > 0.5:
         _progress(0, "BPM sync track 1: %d → %d BPM..." % (int(bpm0), int(master_bpm)))
         result = _time_stretch_to_bpm(result, bpm0, master_bpm)
+        result = _normalize_rms(result)   # re-level track 0 after BPM stretch
 
     # Phase-align track 0 — sub-beat offset only
     stretch_ratio0 = bpm0 / master_bpm if master_bpm > 0 else 1.0
@@ -545,6 +546,7 @@ def generate_mix(
             _progress(1 + i,
                 "BPM sync %d → %d BPM..." % (int(round(bpm_b_orig)), int(round(master_bpm))))
             in_raw = _time_stretch_to_bpm(in_raw, bpm_b_orig, master_bpm)
+            in_raw = _normalize_rms(in_raw)   # re-level after BPM stretch
 
         # Phase alignment — sub-beat offset only
         stretch_ratio_b = bpm_b_orig / master_bpm if master_bpm > 0 else 1.0
