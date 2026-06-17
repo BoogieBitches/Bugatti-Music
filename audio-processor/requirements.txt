@@ -5,3 +5,6 @@ numpy==1.26.4
 scipy==1.13.1
 pydub==0.25.1
 pyrubberband==0.3.0
+# High-accuracy beat tracking (madmom = deep learning RNN, librosa = ML fallback)
+librosa>=0.10.0
+madmom>=0.16.1
