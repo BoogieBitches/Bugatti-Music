@@ -313,24 +313,19 @@ def _echo_out_transition(
 # ── Main engine ───────────────────────────────────────────────────────────────
 
 # Max track length to keep in memory — 7 min is plenty for a DJ set
+# Max track length — 7 min is enough for any DJ set
 _MAX_TRACK_MS = 7 * 60 * 1000
-# Process at half rate to halve memory usage; upsample only at final export
+# Processing rate — half of CD quality, halves every audio array in RAM
 _PROC_RATE = 22_050
 
 
 def _load_seg(spec: TrackSpec) -> AudioSegment:
-    """Load one track at _PROC_RATE Hz, trimmed to _MAX_TRACK_MS.
-
-    Processing at 22 kHz instead of 44 kHz halves every audio array in RAM,
-    keeping peak memory well within Railway's 512 MB free-tier limit.
-    """
+    """Load one track at _PROC_RATE Hz, trimmed to _MAX_TRACK_MS."""
     try:
         seg = AudioSegment.from_file(spec.file_path)
         seg = _ensure_stereo(seg)
-        # Trim before resampling — cheaper on large files
         if len(seg) > _MAX_TRACK_MS:
             seg = seg[:_MAX_TRACK_MS]
-        # Downsample for processing (2x memory saving)
         seg = seg.set_frame_rate(_PROC_RATE)
         seg = _normalize_loudness(seg)
         return seg
@@ -345,44 +340,65 @@ def generate_mix(
     mix_style: str,
     progress_callback=None,
 ) -> bytes:
-    """Generate a DJ mix and return 320 kbps MP3 bytes.
+    """Generate a DJ mix — constant-RAM strategy via disk segments.
 
-    Tracks are loaded lazily — only two segments live in RAM at a time
-    (accumulated mix + next incoming track) to prevent OOM on Railway.
+    Only (transition tail + next track) live in RAM at any time.
+    Stable bodies are flushed to temp WAV files; ffmpeg concatenates at end.
+    Handles 10-20+ tracks on Railway free tier (512 MB).
     """
-    import gc
+    import gc, os, subprocess
+
     assert len(tracks) >= 1
     total_steps = len(tracks) + len(transitions) + 2
 
-    def _progress(step: int, msg: str):
+    def _progress(step: int, msg: str) -> None:
         if progress_callback:
             pct = min(95, int(step / total_steps * 100))
             progress_callback(pct, msg)
 
-    # ── Load first track only ─────────────────────────────────────────────────
-    _progress(0, f"Loading track 1/{len(tracks)}...")
+    disk_segs: list[str] = []
+
+    def _flush_stable(seg: AudioSegment, keep_ms: int) -> AudioSegment:
+        """Write seg[:-keep_ms] to a temp WAV on disk; keep only tail in RAM."""
+        flush_ms = len(seg) - keep_ms
+        if flush_ms > 500:
+            tmp = "/tmp/bugatti_seg_%03d.wav" % len(disk_segs)
+            seg[:flush_ms].export(tmp, format="wav")
+            disk_segs.append(tmp)
+            tail = seg[flush_ms:]
+            del seg
+            gc.collect()
+            return tail
+        return seg
+
+    # ── Load first track ──────────────────────────────────────────────────────
+    _progress(0, "Loading track 1/%d..." % len(tracks))
     result = _load_seg(tracks[0])
 
     if len(tracks) == 1:
         _progress(total_steps - 1, "Exporting...")
         buf = io.BytesIO()
-        result.export(buf, format="mp3", bitrate="320k")
+        result.set_frame_rate(44_100).export(buf, format="mp3", bitrate="320k")
         return buf.getvalue()
 
-    # ── Mix — load each next track just-in-time, free after use ───────────────
+    # ── Mix ───────────────────────────────────────────────────────────────────
     for i, trans in enumerate(transitions):
-        # Load the next track just before it is needed (only 2 segs in RAM)
-        _progress(1 + i, f"Loading track {i + 2}/{len(tracks)}...")
+        bpm_a = trans.bpm_a or 128.0
+        bpm_b = trans.bpm_b or bpm_a
+        fade_ms = _bars_to_ms(trans.transition_bars, bpm_a)
+
+        # Flush stable body to disk — keep 2x transition zone in RAM
+        keep_ms = max(fade_ms * 2, 30_000)
+        result = _flush_stable(result, keep_ms)
+
+        _progress(1 + i, "Loading track %d/%d..." % (i + 2, len(tracks)))
         in_raw = _load_seg(tracks[i + 1])
 
         label = trans.transition_type
         _progress(
             len(tracks) + i,
-            f"Transition {i + 1}/{len(transitions)} — {label} (3-band EQ)...",
+            "Transition %d/%d — %s (3-band EQ)..." % (i + 1, len(transitions), label),
         )
-        bpm_a = trans.bpm_a or 128.0
-        bpm_b = trans.bpm_b or bpm_a
-        fade_ms = _bars_to_ms(trans.transition_bars, bpm_a)
 
         try:
             if label == "cut":
@@ -392,26 +408,54 @@ def generate_mix(
                 result = _filter_sweep_transition(result, in_raw, fade_ms, bpm_a, bpm_b)
             elif label == "echo_out":
                 result = _echo_out_transition(result, in_raw, fade_ms, bpm_a, bpm_b)
-            else:  # crossfade -> 3-band DJ crossfade
+            else:
                 result = _three_band_crossfade(result, in_raw, fade_ms, bpm_a, bpm_b)
         except Exception as exc:
-            logger.warning(
-                "Transition %d (%s) failed — falling back to simple crossfade: %s",
-                i, label, exc,
-            )
+            logger.warning("Transition %d (%s) failed — simple crossfade: %s", i, label, exc)
             cf = max(1_000, min(fade_ms, 8_000, len(result) - 500, len(in_raw) - 500))
             result = result.append(in_raw, crossfade=cf)
 
-        # Free the incoming track immediately — no longer needed
         del in_raw
         gc.collect()
 
-    # ── Master & export ───────────────────────────────────────────────────────
+    # ── Flush final segment ───────────────────────────────────────────────────
     _progress(total_steps - 1, "Mastering and encoding...")
     result = _normalize_loudness(result, target_dbfs=-11.0)
-    buf = io.BytesIO()
-    # Upsample to 44100 Hz only at the very end — cheaper than carrying 44k throughout
-    result = result.set_frame_rate(44_100)
-    result.export(buf, format="mp3", bitrate="320k", tags={"title": f"AI Mix — {mix_style}"})
-    _progress(total_steps, "Done")
-    return buf.getvalue()
+    tmp_final = "/tmp/bugatti_seg_%03d.wav" % len(disk_segs)
+    result.export(tmp_final, format="wav")
+    disk_segs.append(tmp_final)
+    del result
+    gc.collect()
+
+    # ── Concat all segments via ffmpeg (streams — no RAM spike) ───────────────
+    concat_list = "/tmp/bugatti_concat.txt"
+    out_mp3 = "/tmp/bugatti_mix_out.mp3"
+
+    with open(concat_list, "w") as fh:
+        for p in disk_segs:
+            fh.write("file '%s'\n" % p)
+
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", concat_list,
+            "-ar", "44100",
+            "-b:a", "320k",
+            "-metadata", "title=AI Mix",
+            out_mp3,
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    with open(out_mp3, "rb") as fh:
+        data = fh.read()
+
+    for p in disk_segs + [concat_list, out_mp3]:
+        try:
+            os.unlink(p)
+        except Exception:
+            pass
+
+    return data
