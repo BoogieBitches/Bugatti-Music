@@ -123,6 +123,12 @@ def detect_beatgrid(
             tempo, beat_fr  = _librosa.beat.beat_track(y=y, sr=sr, units="frames")
             beat_times      = _librosa.frames_to_time(beat_fr, sr=sr)
             bpm             = round(float(np.clip(float(tempo), 60.0, 200.0)), 1)
+            # Fix octave error: librosa commonly detects at half tempo for kick-heavy music
+            if bpm < 100:
+                bpm = round(bpm * 2, 1)
+            elif bpm > 165:
+                bpm = round(bpm / 2, 1)
+            bpm = round(float(np.clip(bpm, 90.0, 175.0)), 1)
             logger.info("librosa: %.1f BPM, %d beats", bpm, len(beat_times))
             return bpm, [round(float(b), 4) for b in beat_times]
         except Exception as exc:
@@ -131,6 +137,12 @@ def detect_beatgrid(
     # ── 3. scipy fallback (spectral flux, synthesised beatgrid) ───────────
     y        = _load(file_path, duration_sec=duration_sec)
     bpm      = _detect_bpm_scipy(y)
+    # Fix octave error (scipy/autocorrelation also halves for syncopated patterns)
+    if bpm < 100:
+        bpm = round(bpm * 2, 1)
+    elif bpm > 165:
+        bpm = round(bpm / 2, 1)
+    bpm = round(float(np.clip(bpm, 90.0, 175.0)), 1)
     period   = 60.0 / bpm
     duration = len(y) / _SR
     beats    = list(np.arange(0.0, min(duration, duration_sec or duration), period))
