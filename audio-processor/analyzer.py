@@ -1,19 +1,21 @@
-"""Audio analysis — madmom/librosa beat tracking + scipy for key/energy.
+"""Audio analysis — madmom/librosa beat tracking + spectral section detection.
 
 Priority chain for beat detection:
   1. madmom  — RNN deep-learning, ~98 % beat accuracy (Serato-class)
   2. librosa — dynamic-programming beat tracker, well-maintained fallback
   3. scipy   — spectral-flux autocorrelation (original, lowest accuracy)
 
-`analyze_audio()` now returns a `beatgrid` field — a list of beat timestamps
-(seconds) covering the full analysed window. `generate.py` uses this grid for
-sub-beat phase alignment without touching the intro.
+Section detection uses spectral energy analysis:
+  - Full-band RMS energy (overall intensity)
+  - Low-band (50–200 Hz) kick-drum energy to find drops/breakdowns
+  - 8-bar smoothing window aligned to the detected BPM
 """
 from __future__ import annotations
 
 import logging
 import numpy as np
 from scipy import ndimage
+from scipy import signal as sp_sig
 from pydub import AudioSegment
 
 logger = logging.getLogger(__name__)
@@ -40,7 +42,7 @@ except Exception:
 if not _HAS_MADMOM and not _HAS_LIBROSA:
     logger.warning(
         "Neither madmom nor librosa found — using scipy beat tracking (lower accuracy). "
-        "Run: pip install librosa madmom"
+        "Run: pip install librosa"
     )
 
 # ── Camelot / key tables ───────────────────────────────────────────────────────
@@ -82,7 +84,7 @@ def _detect_bpm_scipy(y: np.ndarray) -> float:
     spec    = _stft(y)
     flux    = np.sum(np.maximum(np.diff(spec, axis=1), 0.0), axis=0)
     flux    = ndimage.uniform_filter1d(flux, size=5)
-    corr    = np.correlate(flux, flux, mode="full")[len(flux) - 1 :]
+    corr    = np.correlate(flux, flux, mode="full")[len(flux) - 1:]
     fps     = float(_SR) / _HOP
     lag_min = max(1, int(round(fps * 60 / 200)))
     lag_max = min(int(round(fps * 60 / 60)), len(corr) - 1)
@@ -95,12 +97,7 @@ def detect_beatgrid(
     file_path: str,
     duration_sec: float | None = 90.0,
 ) -> tuple[float, list[float]]:
-    """Return (bpm, beat_times_seconds) using the best available tracker.
-
-    beat_times_seconds — every detected beat from 0 to duration_sec, as a
-    plain Python list of floats.  Used downstream in generate.py for
-    sub-beat phase alignment.
-    """
+    """Return (bpm, beat_times_seconds) using the best available tracker."""
 
     # ── 1. madmom (RNN, best accuracy) ────────────────────────────────────
     if _HAS_MADMOM:
@@ -141,7 +138,7 @@ def detect_beatgrid(
     return bpm, [round(float(b), 4) for b in beats]
 
 
-# ── Legacy aliases (keep backwards compat with old imports) ───────────────────
+# ── Legacy alias ──────────────────────────────────────────────────────────────
 def detect_bpm(y: np.ndarray) -> float:
     return _detect_bpm_scipy(y)
 
@@ -175,14 +172,151 @@ def compute_energy(y: np.ndarray) -> int:
     return round(min(98, max(30, ratio * 120 + 35)))
 
 
-# ── Section timestamps (heuristic, refined if beatgrid available) ─────────────
+# ── Spectral section detection ────────────────────────────────────────────────
+
+def detect_sections_spectral(
+    y: np.ndarray,
+    bpm: float,
+    duration: float,
+) -> dict:
+    """Find breakdown / drop / outro positions via spectral energy analysis.
+
+    Algorithm:
+    1. Compute RMS energy per 1-second frame (overall intensity).
+    2. Compute low-frequency (50–200 Hz) kick-drum energy per frame.
+    3. Smooth both curves with an 8-bar window aligned to BPM.
+    4. Breakdown = sustained region where kick energy < 55% of median.
+    5. Drop      = sustained region where kick energy > 135% of median.
+    6. Outro     = last frame in the final 35% of the track where both
+                   RMS and kick drop and stay low for the next 16 bars.
+
+    Falls back gracefully on very short or very quiet tracks.
+    """
+    hop_sec  = 1.0                       # 1-second per frame
+    win_sec  = 4.0                       # 4-second analysis window
+    hop_len  = int(hop_sec * _SR)
+    win_len  = int(win_sec  * _SR)
+    n_frames = max(4, len(y) // hop_len)
+
+    # ── Full-band RMS ─────────────────────────────────────────────────────
+    rms = np.zeros(n_frames, dtype=np.float32)
+    for j in range(n_frames):
+        seg = y[j * hop_len : j * hop_len + win_len]
+        rms[j] = float(np.sqrt(np.mean(seg ** 2))) if len(seg) > 0 else 0.0
+
+    # ── Kick-drum band: 50–200 Hz ──────────────────────────────────────────
+    nyq = _SR / 2.0
+    lo  = float(np.clip(50.0  / nyq, 1e-4, 0.9999))
+    hi  = float(np.clip(200.0 / nyq, 1e-4, 0.9999))
+    try:
+        b_k, a_k  = sp_sig.butter(4, [lo, hi], btype="band")
+        y_kick    = sp_sig.filtfilt(b_k, a_k, y).astype(np.float32)
+        kick_rms  = np.zeros(n_frames, dtype=np.float32)
+        for j in range(n_frames):
+            seg = y_kick[j * hop_len : j * hop_len + win_len]
+            kick_rms[j] = float(np.sqrt(np.mean(seg ** 2))) if len(seg) > 0 else 0.0
+    except Exception:
+        kick_rms = rms.copy()
+
+    # ── Normalise to [0, 1] ───────────────────────────────────────────────
+    rms_n  = rms      / (rms.max()      + 1e-10)
+    kick_n = kick_rms / (kick_rms.max() + 1e-10)
+
+    # ── Smooth over 8 bars ────────────────────────────────────────────────
+    bar_sec      = 60.0 / max(bpm, 60) * 4        # seconds per bar
+    smooth_width = max(3, int(8 * bar_sec / hop_sec))
+    rms_s  = ndimage.uniform_filter1d(rms_n,  size=smooth_width)
+    kick_s = ndimage.uniform_filter1d(kick_n, size=smooth_width)
+
+    med_rms  = float(np.median(rms_s))
+    med_kick = float(np.median(kick_s))
+    frame_times = np.arange(n_frames) * hop_sec   # seconds
+
+    # ── Boolean masks ─────────────────────────────────────────────────────
+    drop_mask      = kick_s > (med_kick * 1.30)   # kick well above median
+    breakdown_mask = kick_s < (med_kick * 0.55)   # kick well below median
+
+    # Minimum run length for a valid section: 4 bars
+    min_run = max(2, int(4 * bar_sec / hop_sec))
+
+    def _first_sustained(mask: np.ndarray, after: float, before: float) -> float | None:
+        """Return time (sec) of first sustained run ≥ min_run frames in mask,
+        searching in [after_sec, before_sec) range."""
+        f_start = max(0, int(after  / hop_sec))
+        f_end   = min(n_frames, int(before / hop_sec))
+        run = 0
+        for f in range(f_start, f_end):
+            if mask[f]:
+                run += 1
+                if run >= min_run:
+                    onset = f - run + 1
+                    return round(float(frame_times[onset]), 1)
+            else:
+                run = 0
+        return None
+
+    def _last_sustained_low(after_frac: float) -> float | None:
+        """Find last frame in [after_frac … end] where energy drops and stays
+        low for the next 16 bars (typical outro length)."""
+        look_bars = max(1, int(16 * bar_sec / hop_sec))
+        f_start   = int(after_frac * n_frames)
+        threshold = med_rms * 0.72
+        for f in range(f_start, n_frames - look_bars):
+            window = rms_s[f : f + look_bars]
+            if float(np.mean(window)) < threshold and rms_s[f] < threshold:
+                return round(float(frame_times[f]), 1)
+        return None
+
+    # ── Locate each section ───────────────────────────────────────────────
+
+    # intro_end: first sustained DROP in the first 35% of the track
+    intro_end = (
+        _first_sustained(drop_mask, after=0.0, before=duration * 0.35)
+        or round(min(bar_sec * 16, duration * 0.25), 1)
+    )
+
+    # drop_start: first sustained DROP between 20% and 55%
+    drop_start = (
+        _first_sustained(drop_mask, after=duration * 0.20, before=duration * 0.55)
+        or round(duration * 0.35, 1)
+    )
+
+    # break_start: first sustained BREAKDOWN between 30% and 72%
+    # Prefer a breakdown that comes after a drop (the classic "breakdown after drop 1")
+    break_start = (
+        _first_sustained(breakdown_mask, after=max(drop_start, duration * 0.30),
+                         before=duration * 0.72)
+        or _first_sustained(breakdown_mask, after=duration * 0.30, before=duration * 0.72)
+        or round(duration * 0.55, 1)
+    )
+
+    # outro_start: last time energy permanently drops in the final 35%
+    # This is exactly WHERE a DJ should start mixing out.
+    outro_start = (
+        _last_sustained_low(after_frac=0.65)
+        or round(max(duration - bar_sec * 16, duration * 0.75), 1)
+    )
+
+    logger.info(
+        "Sections: intro_end=%.1f drop=%.1f break=%.1f outro=%.1f (dur=%.1f bpm=%.1f)",
+        intro_end, drop_start, break_start, outro_start, duration, bpm,
+    )
+    return {
+        "intro_end":   intro_end,
+        "drop_start":  drop_start,
+        "break_start": break_start,
+        "outro_start": outro_start,
+    }
+
+
 def detect_sections(duration: float, bpm: float) -> dict:
+    """Heuristic fallback (percentage-based). Used when spectral detection fails."""
     bar = 60.0 / max(bpm, 60) * 4
     return {
-        "intro_end":    round(min(bar * 16,  duration * 0.25), 1),
-        "drop_start":   round(duration * 0.35,                  1),
-        "break_start":  round(duration * 0.55,                  1),
-        "outro_start":  round(max(duration - bar * 16, duration * 0.75), 1),
+        "intro_end":   round(min(bar * 16,  duration * 0.25), 1),
+        "drop_start":  round(duration * 0.35,                  1),
+        "break_start": round(duration * 0.55,                  1),
+        "outro_start": round(max(duration - bar * 16, duration * 0.75), 1),
     }
 
 
@@ -198,23 +332,29 @@ def classify_genre(bpm: float, energy: int) -> str:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 def analyze_audio(file_path: str) -> dict:
-    """Full audio analysis.  Returns BPM, key, energy, genre, sections AND
-    the full `beatgrid` (list of beat timestamps in seconds).  The beatgrid
-    is stored by the client and passed back on generation so the mixing engine
-    can do precise, intro-preserving phase alignment without guessing.
+    """Full audio analysis with spectral section detection.
+
+    Returns BPM, key, energy, genre, sections (spectral) AND the full
+    beatgrid (list of beat timestamps in seconds).
     """
     # Beat tracking (madmom → librosa → scipy)
     bpm, beatgrid = detect_beatgrid(file_path, duration_sec=90.0)
 
-    # Chroma / energy analysis on a short clip
+    # Load short slice for key/energy, full track for sections
     y_short = _load(file_path, duration_sec=90)
     y_full  = _load(file_path)
     duration = len(y_full) / _SR
 
     key_name, camelot = detect_key(y_short)
     energy            = compute_energy(y_short)
-    sections          = detect_sections(duration, bpm)
     genre             = classify_genre(bpm, energy)
+
+    # ── Spectral section detection on full track ───────────────────────────
+    try:
+        sections = detect_sections_spectral(y_full, bpm, duration)
+    except Exception as exc:
+        logger.warning("Spectral section detection failed: %s — using heuristic", exc)
+        sections = detect_sections(duration, bpm)
 
     minutes, seconds = int(duration // 60), int(duration % 60)
     return {
@@ -227,7 +367,5 @@ def analyze_audio(file_path: str) -> dict:
         "genre":            genre,
         "sections":         sections,
         # Full beatgrid: list[float] — beat timestamps from track start (seconds).
-        # Covering the first 90 s used for analysis; the mixing engine scales it
-        # to the full track length via the BPM ratio after time-stretching.
         "beatgrid":         beatgrid,
     }
