@@ -393,41 +393,100 @@ def _three_band_crossfade(
     bpm_a:   float = 128.0,
     bpm_b:   float = 128.0,
 ) -> AudioSegment:
-    min_tail = max(6_000, min(fade_ms, (min(len(out_seg), len(in_seg)) - 2_000)))
+    """Professional equal-power DJ crossfade with bass EQ swap.
+
+    Algorithm:
+      1. Split outgoing track at the nearest 8-bar phrase boundary.
+      2. BPM-match the incoming head to master BPM (already done upstream,
+         but _time_stretch_zone is a no-op when ratios match).
+      3. Apply continuous equal-power (cos²/sin²) gain envelopes in numpy
+         so there are NO abrupt volume jumps — smooth throughout.
+      4. Bass swap: outgoing bass fades 25%→75% of the window,
+         incoming bass rises 25%→75%.  Above 200 Hz follows the main
+         equal-power curve.  This is the Pioneer CDJ technique.
+      5. Recombine and return.
+    """
+    min_tail = max(8_000, min(fade_ms, min(len(out_seg), len(in_seg)) - 4_000))
     out_body, out_tail = _phrase_aligned_split(out_seg, bpm_a, min_tail, phrase_bars=8)
-    T = len(out_tail)
-    t1, t2 = T // 3, (2 * T) // 3
+    T = len(out_tail)       # ms
 
     in_head_raw = in_seg[:T]
     in_rest     = in_seg[T:]
     in_head     = _pad_or_trim(_time_stretch_zone(in_head_raw, bpm_b, bpm_a), T)
 
-    # Phase 1: outgoing at -1 dB; incoming low+mid (up to 4 kHz) at -3 dB
-    # (was: LP at 200 Hz → inaudible.  Now bass+mids are clearly heard.)
-    try:
-        p1_out = out_tail[:t1].apply_gain(-1)
-        p1_in  = _eq_lm(in_head[:t1]).apply_gain(-1)   # louder so second track is audible fast
-        phase1 = p1_out.overlay(p1_in)
-    except Exception:
-        phase1 = out_tail[:t1].overlay(in_head[:t1].apply_gain(-6))
+    sr = out_tail.frame_rate
+    ch = out_tail.channels
 
-    # Phase 2: outgoing loses bass, incoming gains
-    try:
-        p2_out = _eq_mh(out_tail[t1:t2]).apply_gain(-2)
-        p2_in  = _eq_lm(in_head[t1:t2]).apply_gain(-1)
-        phase2 = p2_out.overlay(p2_in)
-    except Exception:
-        phase2 = out_tail[t1:t2].apply_gain(-3).overlay(in_head[t1:t2].apply_gain(-3))
+    # ── numpy float arrays ────────────────────────────────────────────────
+    out_arr = _seg_to_float(out_tail)
+    in_arr  = _seg_to_float(in_head)
+    n       = min(len(out_arr), len(in_arr))
+    out_arr = out_arr[:n]
+    in_arr  = in_arr[:n]
 
-    # Phase 3: outgoing only hi-hats fading out, incoming full
-    try:
-        p3_out = _eq_hp(out_tail[t2:], cutoff=HIGH_CUTOFF).fade_out(T - t2)
-        p3_in  = in_head[t2:].fade_in((T - t2) // 3)
-        phase3 = p3_out.overlay(p3_in)
-    except Exception:
-        phase3 = out_tail[t2:].fade_out(T - t2).overlay(in_head[t2:].fade_in((T - t2) // 3))
+    # samples per channel (for envelope generation)
+    n_ch = n // ch if ch > 1 else n
 
-    return out_body + phase1 + phase2 + phase3 + in_rest
+    # ── Equal-power gain envelopes (t: 0→1 across crossfade) ─────────────
+    t       = np.linspace(0.0, 1.0, n_ch, dtype=np.float32)
+    g_out   = np.cos(t * np.pi / 2.0)          # 1.0 → 0.0
+    g_in    = np.sin(t * np.pi / 2.0)          # 0.0 → 1.0
+
+    # Bass swap: outgoing bass cuts 25%→75%, incoming bass rises 25%→75%
+    t_bass      = np.clip((t - 0.25) / 0.50, 0.0, 1.0)
+    g_bass_out  = np.cos(t_bass * np.pi / 2.0)  # 1.0 → 0.0 in the bass-swap window
+    g_bass_in   = np.sin(t_bass * np.pi / 2.0)  # 0.0 → 1.0
+
+    # Expand to stereo samples
+    if ch == 2:
+        g_out      = np.repeat(g_out,      2)[:n]
+        g_in       = np.repeat(g_in,       2)[:n]
+        g_bass_out = np.repeat(g_bass_out, 2)[:n]
+        g_bass_in  = np.repeat(g_bass_in,  2)[:n]
+    else:
+        g_out      = g_out[:n]
+        g_in       = g_in[:n]
+        g_bass_out = g_bass_out[:n]
+        g_bass_in  = g_bass_in[:n]
+
+    try:
+        # Butterworth LP / HP for bass split
+        b_lp, a_lp = _butter_coeffs(LOW_CUTOFF, sr, "low",  order=4)
+        b_hp, a_hp = _butter_coeffs(LOW_CUTOFF, sr, "high", order=4)
+
+        def _filt2(arr: np.ndarray, b, a) -> np.ndarray:
+            if ch == 2:
+                L  = sp.filtfilt(b, a, arr[0::2]).astype(np.float32)
+                R  = sp.filtfilt(b, a, arr[1::2]).astype(np.float32)
+                nn = min(len(L), len(R))
+                r  = np.empty(nn * 2, dtype=np.float32)
+                r[0::2] = L[:nn]; r[1::2] = R[:nn]
+                return r
+            return sp.filtfilt(b, a, arr).astype(np.float32)
+
+        out_bass = _filt2(out_arr, b_lp, a_lp)[:n]
+        out_mids = _filt2(out_arr, b_hp, a_hp)[:n]
+        in_bass  = _filt2(in_arr,  b_lp, a_lp)[:n]
+        in_mids  = _filt2(in_arr,  b_hp, a_hp)[:n]
+
+        # Recombine: bass with swap envelope, mids+highs with main envelope
+        mixed = (
+            out_bass * g_bass_out +
+            out_mids * g_out      +
+            in_bass  * g_bass_in  +
+            in_mids  * g_in
+        )
+        logger.info(
+            "DJ crossfade: equal-power + bass-swap, tail=%d ms (%.1f bars @ %.0f BPM)",
+            T, T / (_bars_to_ms(1, bpm_a)), bpm_a,
+        )
+    except Exception as exc:
+        logger.warning("Bass-split crossfade failed (%s) — using simple equal-power", exc)
+        # Fallback: just equal-power without EQ split
+        mixed = out_arr * g_out + in_arr * g_in
+
+    mixed_seg = _float_to_seg(mixed[:n], sr, ch)
+    return out_body + mixed_seg + in_rest
 
 
 def _filter_sweep_transition(
