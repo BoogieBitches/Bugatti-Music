@@ -21,6 +21,7 @@ interface Track {
   energy: number | null;
   genre: string | null;
   sections?: Record<string, number>;
+  beatgrid?: number[];
   analyzed: boolean;
   analyzing: boolean;
   error?: string;
@@ -413,6 +414,7 @@ export function AIMixStudio({
         bpm:d.bpm??null, key:d.key??null, camelot:d.camelot??null,
         energy:d.energy??null, genre:d.genre??null, duration:d.duration??"?:??",
         durationSeconds:d.duration_seconds, sections:d.sections,
+        beatgrid:Array.isArray(d.beatgrid) ? d.beatgrid : undefined,
         analyzed:true, analyzing:false, error:undefined,
       };
     } catch(err) {
@@ -508,6 +510,7 @@ export function AIMixStudio({
           duration_seconds: t.durationSeconds||300,
           sections: t.sections||{},
           camelot: t.camelot,
+          beatgrid: t.beatgrid ?? null,
         })),
         transitions: transPlans.map(p=>({
           from_track_id: tracks[p.fromIdx].trackId||tracks[p.fromIdx].id,
