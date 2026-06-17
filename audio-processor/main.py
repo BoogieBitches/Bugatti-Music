@@ -228,6 +228,7 @@ class GenerateRequest(BaseModel):
     tracks: list[dict]          # [{track_id, bpm, energy, duration_seconds, sections, camelot}, ...]
     transitions: list[dict]     # [{from_track_id, to_track_id, transition_type, transition_bars, bpm_a}, ...]
     mix_style: str = "club"
+    target_bpm: float | None = None   # master BPM; all tracks are stretched to this
 
 
 @app.post("/audio/generate")
@@ -341,6 +342,7 @@ def _run_generation(job_id: str, req: GenerateRequest):
             transitions=trans_specs,
             mix_style=req.mix_style,
             progress_callback=_progress_cb,
+            target_bpm=req.target_bpm,
         )
 
         Path(output_path).write_bytes(mp3_bytes)
