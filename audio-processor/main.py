@@ -321,6 +321,7 @@ def _run_generation(job_id: str, req: GenerateRequest):
                 energy=int(t.get("energy") or 70),
                 duration_seconds=float(t.get("duration_seconds") or 300),
                 sections=t.get("sections") or {},
+                beatgrid=t.get("beatgrid") or None,
             ))
 
         trans_specs: list[TransitionSpec] = []
