@@ -291,18 +291,28 @@ def _calculate_mix_point_ms(
     bpm_orig = float(spec.bpm or master_bpm)
 
     # Stretch factor: track is sped up or slowed to master_bpm
-    # new_duration_ms = orig_duration_ms * orig_bpm / master_bpm
-    stretch_factor = bpm_orig / master_bpm  # = orig/master
+    stretch_factor = bpm_orig / master_bpm
 
-    track_dur_ms = int(spec.duration_seconds * 1000 * stretch_factor)
+    # Use actual audio length (current_seg_len_ms) for the 32-bar rule.
+    # spec.duration_seconds can be 0 or stale — don't rely on it for positioning.
+    bars32_ms    = _bars_to_ms(32, master_bpm)
+    bars32_start = max(0, current_seg_len_ms - bars32_ms)
 
-    # outro_start in stretched time from beat-1
+    # outro_start from spectral analysis (in original time → scale to stretched)
     outro_sec = float((spec.sections or {}).get("outro_start") or 0)
-    outro_ms  = int(outro_sec * 1000 * stretch_factor) if outro_sec > 0 else 0
+    if outro_sec > 0:
+        # Scale outro_sec to stretched time, then convert to ms from seg start
+        # current_seg length ≈ duration_stretched; use ratio with actual length
+        orig_dur_sec = float(spec.duration_seconds or 0)
+        if orig_dur_sec > 0:
+            outro_ratio = outro_sec / orig_dur_sec
+        else:
+            outro_ratio = 0.75  # sensible default: 75% through the track
+        outro_ms = int(outro_ratio * current_seg_len_ms)
+    else:
+        outro_ms = 0
 
-    # 32-bars-from-end (hard limit: always mix at least 32 bars before end)
-    bars32_ms  = _bars_to_ms(32, master_bpm)
-    bars32_start = max(0, track_dur_ms - bars32_ms)
+    # 32-bars-from-end (safety: always start mixing before last 32 bars)
 
     # Choose the earlier of outro and 32-bar limit
     if outro_ms > 0:
@@ -601,6 +611,17 @@ def generate_mix(
         out_body = current_seg[:mix_start_ms]
         out_tail = current_seg[mix_start_ms:]
 
+        # Cap crossfade zone to 32 bars max — avoids OOM on large tails.
+        # Anything beyond 32 bars before the mix point becomes extra body.
+        max_xfade_ms = _bars_to_ms(32, master_bpm)
+        if len(out_tail) > max_xfade_ms:
+            extra = out_tail[:-max_xfade_ms]
+            out_tail = out_tail[-max_xfade_ms:]
+            # extra goes to disk as part of the body
+            if len(extra) > 200:
+                disk_parts.append(_save_to_disk(extra, "body_extra"))
+            del extra
+
         # Save body to disk
         if len(out_body) > 200:
             disk_parts.append(_save_to_disk(out_body, "body"))
@@ -637,10 +658,10 @@ def generate_mix(
 
         try:
             if label == "cut":
-                # Hard cut at 4-bar boundary within out_tail
-                cut_ms = min(_bars_to_ms(4, master_bpm), len(out_tail))
-                disk_parts.append(_save_to_disk(out_tail[:cut_ms], "cut"))
-                current_seg = in_raw
+                # Even a "cut" transition gets a short 2-bar crossfade so the
+                # switch is audible but quick — avoids a completely abrupt jump.
+                cut_xfade_ms = max(1_000, min(_bars_to_ms(2, master_bpm), len(out_tail) // 2, len(in_raw) // 2))
+                current_seg = out_tail.append(in_raw, crossfade=cut_xfade_ms)
             elif label == "filter_sweep":
                 current_seg = _filter_sweep_v2(out_tail, in_raw, master_bpm)
             elif label == "echo_out":
