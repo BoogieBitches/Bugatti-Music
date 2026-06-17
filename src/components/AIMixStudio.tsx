@@ -291,6 +291,8 @@ export function AIMixStudio({
   const [reorderIdx,setReorderIdx] = useState<number|null>(null);
   // restored mix from history
   const [restoredMix,setRestoredMix] = useState<{jobId:string;durationMin:number|null;apiBase:string}|null>(null);
+  // Master BPM for whole mix (Serato-style sync)
+  const [targetBpm,setTargetBpm] = useState<number|null>(null);
   // AI set planner
   const [aiPlanning,setAiPlanning] = useState(false);
   const [aiPlan,setAiPlan] = useState<{reasoning:string;energy_arc:string}|null>(null);
@@ -307,6 +309,13 @@ export function AIMixStudio({
   // ── Polling ───────────────────────────────────────────────────────────────
 
   useEffect(()=>()=>{if(pollRef.current)clearInterval(pollRef.current);},[]);
+  // Auto-set target BPM from first analyzed track (only when not manually set)
+  useEffect(()=>{
+    const analyzed = tracks.filter(t=>t.bpm&&!t.analyzing);
+    if(analyzed.length>0&&targetBpm===null){
+      setTargetBpm(Math.round(analyzed[0].bpm!));
+    }
+  },[tracks]);
 
   function startPolling(jid: string) {
     const apiBase = AUDIO_API||"/audio";
@@ -509,6 +518,7 @@ export function AIMixStudio({
           bpm_b: tracks[p.toIdx].bpm||128,
         })),
         mix_style: selectedStyle,
+        target_bpm: targetBpm ?? (tracks[0]?.bpm || 128),
       };
 
       const res = await fetch(`${apiBase}/audio/generate`,{
@@ -864,6 +874,28 @@ export function AIMixStudio({
               </div>
             </button>
           </div>
+
+          {/* Target BPM: Serato-style master BPM for the whole mix */}
+          {tracks.some(t=>t.bpm&&!t.analyzing)&&(
+            <div className="mb-4 px-4 py-3 rounded-xl bg-white/5 border border-white/10 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold text-white/70 mb-0.5">🎯 Target BPM</div>
+                <div className="text-[10px] text-white/30">Все треки синхронизируются к этому BPM (ударник в ударник)</div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button onClick={()=>setTargetBpm(b=>Math.max(60,Math.round((b??128)-1)))}
+                  className="w-6 h-6 rounded-md bg-white/10 hover:bg-white/20 text-white/60 text-sm font-bold flex items-center justify-center transition-colors">−</button>
+                <input
+                  type="number" min={60} max={220} step={1}
+                  value={targetBpm??''} placeholder="128"
+                  onChange={e=>{const v=parseInt(e.target.value);if(!isNaN(v)&&v>=40&&v<=300)setTargetBpm(v);else if(e.target.value==='')setTargetBpm(null);}}
+                  className="w-14 text-center bg-black/30 border border-white/20 rounded-lg py-1 text-sm font-bold text-white focus:outline-none focus:border-[var(--accent)]"
+                />
+                <button onClick={()=>setTargetBpm(b=>Math.min(220,Math.round((b??128)+1)))}
+                  className="w-6 h-6 rounded-md bg-white/10 hover:bg-white/20 text-white/60 text-sm font-bold flex items-center justify-center transition-colors">+</button>
+              </div>
+            </div>
+          )}
 
           {genError&&(
             <div className="mb-4 px-4 py-3 rounded-lg bg-red-900/20 border border-red-500/30 text-sm text-red-300">
