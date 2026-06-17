@@ -32,12 +32,14 @@ def _bpm_score(bpm_a: float, bpm_b: float) -> tuple[int, float]:
 
 
 def _transition_type(bpm_score: int, key_score: int, energy_diff: int) -> str:
+    # "cut" is reserved for near-identical tracks (same BPM, same key, same energy).
+    # Almost all transitions should use crossfade for smooth, audible blending.
     combined = bpm_score * 0.45 + key_score * 0.55
-    if combined >= 85 and abs(energy_diff) <= 8:
+    if combined >= 96 and abs(energy_diff) <= 2 and bpm_score >= 97:
         return "cut"
-    elif combined >= 72:
-        return "crossfade"
     elif combined >= 55:
+        return "crossfade"
+    elif combined >= 38:
         return "filter_sweep"
     else:
         return "echo_out"
@@ -45,8 +47,8 @@ def _transition_type(bpm_score: int, key_score: int, energy_diff: int) -> str:
 
 def _bars(trans_type: str, bpm_score: int) -> int:
     if trans_type == "cut":
-        return 4
-    elif trans_type == "crossfade" and bpm_score >= 85:
+        return 8
+    elif trans_type == "crossfade" and bpm_score >= 90:
         return 16
     elif trans_type == "crossfade":
         return 32
