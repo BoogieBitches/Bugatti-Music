@@ -232,6 +232,44 @@ def _time_stretch_to_bpm(seg: AudioSegment, source_bpm: float, target_bpm: float
 def _time_stretch_zone(seg: AudioSegment, source_bpm: float, target_bpm: float) -> AudioSegment:
     return _time_stretch_to_bpm(seg, source_bpm, target_bpm)
 
+def _find_first_beat_ms(seg: AudioSegment, bpm: float) -> float:
+    """Return offset (ms) from audio start to first beat via onset detection.
+
+    Snaps to nearest half-beat grid for robustness against transient noise.
+    Returns 0.0 when signal is silent or detection fails.
+    """
+    analysis_ms = min(8_000, len(seg))
+    arr = np.array(seg[:analysis_ms].get_array_of_samples(), dtype=np.float32) / 32768.0
+    sr  = seg.frame_rate
+    if seg.channels == 2:
+        arr = (arr[0::2] + arr[1::2]) * 0.5
+    if len(arr) < 200:
+        return 0.0
+    hop = max(1, int(sr * 0.010))          # 10 ms frames
+    n   = len(arr) // hop
+    energy = np.array(
+        [float(np.mean(arr[j * hop:(j + 1) * hop] ** 2)) for j in range(n)],
+        dtype=np.float32,
+    )
+    onset = np.maximum(0.0, np.diff(energy, prepend=energy[0]))
+    onset = np.convolve(onset, np.array([0.25, 0.5, 0.25]), mode="same")
+    if onset.max() < 1e-8:
+        return 0.0
+    threshold = np.percentile(onset, 80)
+    peaks = np.where(onset > threshold)[0]
+    if len(peaks) == 0:
+        return 0.0
+    raw_ms = float(peaks[0] * 10)
+    # Snap to nearest half-beat
+    half_beat_ms = 30_000.0 / max(bpm, 40)
+    return round(raw_ms / half_beat_ms) * half_beat_ms
+
+
+def _normalize_rms(seg: AudioSegment, target_dbfs: float = -14.0) -> AudioSegment:
+    """Loudness normalisation: clamp gain to ±9 dB to avoid over-amplifying quiet intros."""
+    diff = target_dbfs - seg.dBFS
+    return seg.apply_gain(max(-9.0, min(diff, 9.0)))
+
 # ── Transition engines ────────────────────────────────────────────────────────
 
 def _three_band_crossfade(
@@ -337,7 +375,7 @@ def _load_seg(spec: TrackSpec) -> AudioSegment:
         if len(seg) > _MAX_TRACK_MS:
             seg = seg[:_MAX_TRACK_MS]
         seg = seg.set_frame_rate(_PROC_RATE)
-        seg = _normalize_loudness(seg)
+        seg = _normalize_rms(seg)
         return seg
     except Exception as exc:
         logger.error("Failed to load %s: %s", spec.file_path, exc)
@@ -349,12 +387,13 @@ def generate_mix(
     transitions: list[TransitionSpec],
     mix_style: str,
     progress_callback=None,
+    target_bpm: float | None = None,
 ) -> bytes:
-    """Generate a DJ mix — constant-RAM strategy via disk segments.
+    """Generate a DJ mix — Serato-style BPM sync + phase align + loudness leveling.
 
-    Only (transition tail + next track) live in RAM at any time.
-    Stable bodies are flushed to temp WAV files; ffmpeg concatenates at end.
-    Handles 10-20+ tracks on Railway free tier (512 MB).
+    target_bpm: every track is stretched to this BPM (pitch-preserving via ffmpeg
+                atempo). Defaults to the BPM of the first track when None.
+    Memory:     constant RAM via disk-segment flushing — handles 20+ tracks.
     """
     import gc, os, subprocess
 
@@ -391,11 +430,24 @@ def generate_mix(
         result.set_frame_rate(44_100).export(buf, format="mp3", bitrate="320k")
         return buf.getvalue()
 
+    # ── Determine master BPM for the whole mix ───────────────────────────────
+    master_bpm = float(target_bpm) if target_bpm and target_bpm > 0 else float(tracks[0].bpm or 128)
+
+    # Stretch track 0 to master BPM as well
+    if abs(float(tracks[0].bpm or master_bpm) - master_bpm) > 0.5:
+        _progress(0, "BPM sync track 1: %d -> %d BPM..." % (int(tracks[0].bpm or master_bpm), int(master_bpm)))
+        result = _time_stretch_to_bpm(result, float(tracks[0].bpm or master_bpm), master_bpm)
+    # Phase-align track 0
+    fb0 = _find_first_beat_ms(result, master_bpm)
+    if fb0 > 5 and fb0 < len(result) - 2000:
+        result = result[int(fb0):]
+        logger.info("Track 1 phase-aligned: trimmed %.0f ms", fb0)
+
     # ── Mix ───────────────────────────────────────────────────────────────────
     for i, trans in enumerate(transitions):
-        bpm_a = trans.bpm_a or 128.0
-        bpm_b = trans.bpm_b or bpm_a
-        fade_ms = _bars_to_ms(trans.transition_bars, bpm_a)
+        bpm_a = master_bpm                    # outgoing is always at master_bpm now
+        bpm_b_orig = float(trans.bpm_b or trans.bpm_a or master_bpm)
+        fade_ms = _bars_to_ms(trans.transition_bars, master_bpm)
 
         # Flush stable body to disk — keep 2x transition zone in RAM
         keep_ms = max(fade_ms * 2, 30_000)
@@ -404,14 +456,21 @@ def generate_mix(
         _progress(1 + i, "Loading track %d/%d..." % (i + 2, len(tracks)))
         in_raw = _load_seg(tracks[i + 1])
 
-        # BPM sync: stretch incoming track to outgoing BPM (pitch-preserving)
-        if abs(bpm_b - bpm_a) > 0.5:
+        # ── BPM sync: full-track pitch-preserving stretch to master_bpm ──────
+        if abs(bpm_b_orig - master_bpm) > 0.5:
             _progress(
                 1 + i,
-                "BPM sync %d -> %d BPM..." % (int(round(bpm_b)), int(round(bpm_a))),
+                "BPM sync %d -> %d BPM..." % (int(round(bpm_b_orig)), int(round(master_bpm))),
             )
-            in_raw = _time_stretch_to_bpm(in_raw, bpm_b, bpm_a)
+            in_raw = _time_stretch_to_bpm(in_raw, bpm_b_orig, master_bpm)
 
+        # ── Phase alignment: trim to beat grid ───────────────────────────────
+        first_beat = _find_first_beat_ms(in_raw, master_bpm)
+        if first_beat > 5 and first_beat < len(in_raw) - 2000:
+            in_raw = in_raw[int(first_beat):]
+            logger.info("Track %d phase-aligned: trimmed %.0f ms", i + 2, first_beat)
+
+        # ── Transition (pass master_bpm for both — no double-stretch) ────────
         label = trans.transition_type
         _progress(
             len(tracks) + i,
@@ -420,14 +479,14 @@ def generate_mix(
 
         try:
             if label == "cut":
-                body, _ = _phrase_aligned_split(result, bpm_a, _bars_to_ms(4, bpm_a), phrase_bars=8)
+                body, _ = _phrase_aligned_split(result, master_bpm, _bars_to_ms(4, master_bpm), phrase_bars=8)
                 result = body + in_raw
             elif label == "filter_sweep":
-                result = _filter_sweep_transition(result, in_raw, fade_ms, bpm_a, bpm_b)
+                result = _filter_sweep_transition(result, in_raw, fade_ms, master_bpm, master_bpm)
             elif label == "echo_out":
-                result = _echo_out_transition(result, in_raw, fade_ms, bpm_a, bpm_b)
+                result = _echo_out_transition(result, in_raw, fade_ms, master_bpm, master_bpm)
             else:
-                result = _three_band_crossfade(result, in_raw, fade_ms, bpm_a, bpm_b)
+                result = _three_band_crossfade(result, in_raw, fade_ms, master_bpm, master_bpm)
         except Exception as exc:
             logger.warning("Transition %d (%s) failed — simple crossfade: %s", i, label, exc)
             cf = max(1_000, min(fade_ms, 8_000, len(result) - 500, len(in_raw) - 500))
