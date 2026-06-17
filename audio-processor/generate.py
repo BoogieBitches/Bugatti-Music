@@ -32,6 +32,15 @@ try:
 except Exception:
     _HAS_PYRB = False
 
+# librosa for pitch-preserving time stretch (phase vocoder) — already in requirements
+try:
+    import librosa as _librosa_gen
+    _HAS_LIBROSA_GEN = True
+    logger.info("librosa available — pitch-preserving BPM sync enabled")
+except Exception:
+    _HAS_LIBROSA_GEN = False
+    logger.warning("librosa not available — BPM sync falls back to ffmpeg atempo")
+
 TransitionType = Literal["cut", "crossfade", "filter_sweep", "echo_out"]
 
 # ── DJ mixer band boundaries (Hz) ─────────────────────────────────────────────
@@ -189,14 +198,56 @@ def _atempo_chain(ratio: float) -> str:
 
 
 def _time_stretch_to_bpm(seg: AudioSegment, source_bpm: float, target_bpm: float) -> AudioSegment:
-    """Pitch-preserving BPM sync via ffmpeg atempo."""
+    """Pitch-preserving BPM sync.
+
+    Priority:
+      1. librosa phase-vocoder  — pure Python, proven pitch-preserving, no subprocess.
+      2. ffmpeg atempo           — fallback if librosa unavailable.
+
+    Both methods preserve pitch exactly — only tempo changes.
+    If both fail, returns the original segment unchanged (with a warning log).
+    """
     import subprocess, os
     if source_bpm <= 0 or target_bpm <= 0:
         return seg
     ratio = target_bpm / source_bpm
     if abs(ratio - 1.0) < 0.005:
-        return seg
+        return seg   # already close enough — skip processing
 
+    sr       = seg.frame_rate
+    channels = seg.channels
+    arr      = np.array(seg.get_array_of_samples(), dtype=np.float32) / 32768.0
+
+    # ── 1. librosa phase vocoder ──────────────────────────────────────────
+    # Pure-Python, proven pitch-preserving (STFT phase vocoder).
+    # Uses the same librosa already required by analyzer.py.
+    if _HAS_LIBROSA_GEN:
+        try:
+            if channels == 2:
+                L = _librosa_gen.effects.time_stretch(arr[0::2].copy(), rate=ratio)
+                R = _librosa_gen.effects.time_stretch(arr[1::2].copy(), rate=ratio)
+                n   = min(len(L), len(R))
+                out = np.empty(n * 2, dtype=np.float32)
+                out[0::2] = L[:n]
+                out[1::2] = R[:n]
+            else:
+                out = _librosa_gen.effects.time_stretch(arr.copy(), rate=ratio)
+            int16  = (np.clip(out, -1.0, 1.0) * 32767).astype(np.int16)
+            result = AudioSegment(
+                int16.tobytes(), frame_rate=sr, sample_width=2, channels=channels
+            )
+            logger.info(
+                "BPM sync %.1f → %.1f BPM via librosa phase-vocoder (ratio=%.4f, pitch intact)",
+                source_bpm, target_bpm, ratio,
+            )
+            return result
+        except Exception as exc:
+            logger.warning(
+                "librosa time_stretch failed (ratio=%.4f): %s — trying ffmpeg atempo",
+                ratio, exc,
+            )
+
+    # ── 2. ffmpeg atempo fallback ─────────────────────────────────────────
     uid     = abs(hash(id(seg))) % 10_000_000
     tmp_in  = "/tmp/_bpm_in_%d.wav"  % uid
     tmp_out = "/tmp/_bpm_out_%d.wav" % uid
@@ -211,12 +262,18 @@ def _time_stretch_to_bpm(seg: AudioSegment, source_bpm: float, target_bpm: float
                 "ffmpeg atempo FAILED (ratio=%.4f) stderr: %s",
                 ratio, r.stderr.decode(errors="replace")[-600:],
             )
-            return seg   # fall back to original tempo — DO NOT silence the track
+            logger.warning("BPM sync skipped — track keeps its original tempo")
+            return seg
         result = AudioSegment.from_file(tmp_out, format="wav")
-        logger.info("BPM sync %.1f -> %.1f (atempo %.4f)", source_bpm, target_bpm, ratio)
+        logger.info(
+            "BPM sync %.1f → %.1f BPM via ffmpeg atempo (ratio=%.4f, pitch intact)",
+            source_bpm, target_bpm, ratio,
+        )
         return result
     except Exception as exc:
-        logger.warning("ffmpeg atempo error (%.3f): %s — keeping original tempo", ratio, exc)
+        logger.warning(
+            "ffmpeg atempo error (%.3f): %s — track keeps original tempo", ratio, exc
+        )
         return seg
     finally:
         for p in (tmp_in, tmp_out):
