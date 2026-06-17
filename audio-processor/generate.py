@@ -512,8 +512,23 @@ def generate_mix(
         bpm_b_orig = float(trans.bpm_b or trans.bpm_a or master_bpm)
         fade_ms    = _bars_to_ms(trans.transition_bars, master_bpm)
 
-        # Keep at least 60 s before transition in RAM (1-min-before-end rule)
-        keep_ms = max(fade_ms * 2, 60_000)
+        # Use outro_start from outgoing track's spectral sections to determine
+        # exactly where to begin the transition — the musical outro/energy drop.
+        _out_track   = tracks[i]
+        _out_secs    = _out_track.sections or {}
+        _outro_sec   = float(_out_secs.get('outro_start') or 0)
+        _out_dur_sec = float(_out_track.duration_seconds or 300)
+        if _outro_sec > 10 and _out_dur_sec > _outro_sec:
+            # Scale for BPM stretch: stretched_ms = original * (source_bpm / master_bpm)
+            _stretch = float(_out_track.bpm or master_bpm) / max(master_bpm, 1.0)
+            _tail_ms = int((_out_dur_sec - _outro_sec) * _stretch * 1_000)
+            keep_ms  = max(fade_ms, min(_tail_ms, 180_000))   # clamp: fade_ms … 3 min
+            logger.info(
+                'Track %d outro at %.1fs → transition keep_ms=%d ms',
+                i + 1, _outro_sec, keep_ms,
+            )
+        else:
+            keep_ms = max(fade_ms * 2, 60_000)
         result  = _flush_stable(result, keep_ms)
 
         _progress(1 + i, "Loading track %d/%d..." % (i + 2, len(tracks)))
