@@ -202,15 +202,21 @@ def _time_stretch_to_bpm(seg: AudioSegment, source_bpm: float, target_bpm: float
     tmp_out = "/tmp/_bpm_out_%d.wav" % uid
     try:
         seg.export(tmp_in, format="wav")
-        subprocess.run(
+        r = subprocess.run(
             ["ffmpeg", "-y", "-i", tmp_in, "-filter:a", _atempo_chain(ratio), tmp_out],
-            check=True, capture_output=True,
+            capture_output=True,
         )
+        if r.returncode != 0:
+            logger.error(
+                "ffmpeg atempo failed (ratio=%.4f): %s",
+                ratio, r.stderr.decode(errors="replace")[-400:],
+            )
+            return seg
         result = AudioSegment.from_file(tmp_out, format="wav")
         logger.info("BPM sync %.1f -> %.1f (atempo %.4f)", source_bpm, target_bpm, ratio)
         return result
     except Exception as exc:
-        logger.warning("ffmpeg atempo failed (%.3f): %s — using original tempo", ratio, exc)
+        logger.warning("ffmpeg atempo error (%.3f): %s — using original tempo", ratio, exc)
         return seg
     finally:
         for p in (tmp_in, tmp_out):
@@ -318,7 +324,7 @@ def _find_first_beat_ms(seg: AudioSegment, bpm: float) -> float:
 
 def _normalize_rms(seg: AudioSegment, target_dbfs: float = -14.0) -> AudioSegment:
     diff = target_dbfs - seg.dBFS
-    return seg.apply_gain(max(-9.0, min(diff, 9.0)))
+    return seg.apply_gain(max(-18.0, min(diff, 18.0)))
 
 
 # ── Transition engines ────────────────────────────────────────────────────────
@@ -343,7 +349,7 @@ def _three_band_crossfade(
     # (was: LP at 200 Hz → inaudible.  Now bass+mids are clearly heard.)
     try:
         p1_out = out_tail[:t1].apply_gain(-1)
-        p1_in  = _eq_lm(in_head[:t1]).apply_gain(-3)
+        p1_in  = _eq_lm(in_head[:t1]).apply_gain(-1)   # was -3, now audible immediately
         phase1 = p1_out.overlay(p1_in)
     except Exception:
         phase1 = out_tail[:t1].overlay(in_head[:t1].apply_gain(-6))
@@ -412,7 +418,7 @@ def _echo_out_transition(
     in_slice         = in_seg[:overlap_ms]
     in_head_matched  = _pad_or_trim(_time_stretch_zone(in_slice, bpm_b, bpm_a), overlap_ms)
     # Fade incoming in over the first half of the overlap (max 16 s)
-    fade_in_ms       = min(overlap_ms // 2, 16_000)
+    fade_in_ms       = min(overlap_ms // 6, 4_000)   # short fade-in so incoming is audible fast
     in_full          = in_head_matched.fade_in(fade_in_ms) + in_seg[overlap_ms:]
 
     ov    = min(overlap_ms, len(out_tail_faded), len(in_full))
