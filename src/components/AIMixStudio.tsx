@@ -297,6 +297,10 @@ export function AIMixStudio({
   const [aiPlanError,setAiPlanError] = useState<string|null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval>|null>(null);
+  const pollFailRef = useRef<number>(0);
+  const pollStartRef = useRef<number>(0);
+  const pollLastProgressRef = useRef<number>(-1);
+  const pollLastProgressTimeRef = useRef<number>(0);
   // keep a ref to tracks+style at generation time for history saving
   const genSnapshotRef = useRef<{tracks:Track[];style:MixStyle;avgScore:number|null}|null>(null);
 
@@ -306,13 +310,53 @@ export function AIMixStudio({
 
   function startPolling(jid: string) {
     const apiBase = AUDIO_API||"/audio";
+    pollFailRef.current = 0;
+    pollStartRef.current = Date.now();
+    pollLastProgressRef.current = -1;
+    pollLastProgressTimeRef.current = Date.now();
     pollRef.current = setInterval(async()=>{
       try {
         const res = await fetch(`${apiBase}/audio/jobs/${jid}`);
-        if(!res.ok) return;
+
+        // 404 = сервер перезагрузился, job потерян
+        if(res.status === 404){
+          clearInterval(pollRef.current!);
+          setGenerating(false);
+          setGenError("Сервер перезагрузился во время генерации. Пожалуйста, начните заново.");
+          return;
+        }
+
+        // Другие ошибки — считаем попытки (сеть может временно отвалиться)
+        if(!res.ok){
+          pollFailRef.current += 1;
+          if(pollFailRef.current >= 10){
+            clearInterval(pollRef.current!);
+            setGenerating(false);
+            setGenError(`Сервер недоступен (HTTP ${res.status}). Попробуйте позже.`);
+          }
+          return;
+        }
+
+        pollFailRef.current = 0;
         const data: JobStatus = await res.json();
         setGenProgress(data.progress);
         setGenMessage(data.message);
+
+        // Обновляем время последнего изменения прогресса
+        if(data.progress !== pollLastProgressRef.current){
+          pollLastProgressRef.current = data.progress;
+          pollLastProgressTimeRef.current = Date.now();
+        }
+
+        // Таймаут: если прогресс не менялся 5 минут — что-то пошло не так
+        const staleMs = Date.now() - pollLastProgressTimeRef.current;
+        if(data.status === "running" && staleMs > 5 * 60 * 1000){
+          clearInterval(pollRef.current!);
+          setGenerating(false);
+          setGenError("Генерация зависла (нет прогресса 5 минут). Попробуйте с меньшим числом треков или повторите позже.");
+          return;
+        }
+
         if(data.status==="done"){
           clearInterval(pollRef.current!);
           setGenerating(false);
