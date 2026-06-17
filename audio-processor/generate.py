@@ -54,20 +54,35 @@ HIGH_CUTOFF = 4_000
 
 
 def _bpm_from_beatgrid(beatgrid: list[float] | None, fallback: float) -> float:
-    """Compute accurate BPM from beat timestamp list.
+    """Compute accurate BPM from beat timestamp list (Serato SYNC approach).
 
-    More reliable than stored metadata: uses median inter-beat interval from
-    the beatgrid (the same data Serato uses for its SYNC button). Falls back
-    to `fallback` when the beatgrid is too short to be useful.
+    Uses median inter-beat interval. Applies octave correction matching
+    analyzer.py: librosa sometimes returns half the actual BPM (e.g. 64
+    instead of 128) — we double it the same way the analyzer does.
+    Falls back to `fallback` when the beatgrid is too short to be useful.
     """
     if beatgrid and len(beatgrid) >= 4:
         ibis = np.diff(np.array(beatgrid, dtype=np.float64))
-        ibis = ibis[(ibis > 0.2) & (ibis < 2.0)]  # filter out bogus values
+        ibis = ibis[(ibis > 0.2) & (ibis < 2.0)]  # filter bogus outliers
         if len(ibis) >= 3:
             bpm = 60.0 / float(np.median(ibis))
-            # Sanity-check: reject values outside 60-220 BPM
-            if 60 <= bpm <= 220:
-                return bpm
+            # Octave correction: same logic as analyzer.py to stay consistent.
+            # librosa/scipy often detect at half tempo for kick-heavy music.
+            if bpm < 100:
+                bpm *= 2.0
+            elif bpm > 165:
+                bpm /= 2.0
+            bpm = float(np.clip(bpm, 60.0, 220.0))
+            # Cross-validate against the fallback (stored spec.bpm):
+            # if they differ by more than 15%, trust the stored value —
+            # beatgrid may have been stored before octave correction was added.
+            if fallback > 0 and abs(bpm - fallback) / fallback > 0.15:
+                logger.info(
+                    "_bpm_from_beatgrid: beatgrid=%.1f vs stored=%.1f (>15%% diff) — using stored",
+                    bpm, fallback,
+                )
+                return fallback
+            return bpm
     return fallback
 
 
@@ -218,21 +233,21 @@ def _time_stretch_to_bpm(seg: AudioSegment, source_bpm: float, target_bpm: float
 # ── Phase alignment ───────────────────────────────────────────────────────────
 
 def _phase_offset_from_beatgrid(beatgrid: list[float], stretch_ratio: float = 1.0) -> float:
-    """Sub-beat phase offset (ms) using stored beatgrid.
+    """Return ms to trim from the track start so that beat-1 lands at t=0 ms.
 
-    Returns the fractional-beat offset so that after trimming this amount
-    from the track start, beat-1 lands exactly at t=0 ms.
+    Simply returns beats[0] * stretch_ratio * 1000 — the timestamp of the
+    first detected beat in the stretched track. After trimming this amount,
+    beat-1 is at position 0 of the audio buffer.
+
+    Previous implementation used `first_beat % beat_period` which was wrong
+    when first_beat > beat_period (e.g. track has a 1-second intro before
+    beat-1): it would only trim a fraction of a beat instead of the full intro,
+    leaving beat-1 hundreds of ms off from position 0.
     """
     if not beatgrid or len(beatgrid) < 2:
         return 0.0
-    beats = np.array(beatgrid, dtype=np.float64) * stretch_ratio
-    ibis        = np.diff(beats)
-    beat_period = float(np.median(ibis))
-    if beat_period <= 0:
-        return 0.0
-    first_beat      = float(beats[0])
-    phase_offset_sec = first_beat % beat_period
-    return phase_offset_sec * 1_000.0
+    first_beat_stretched = float(beatgrid[0]) * stretch_ratio
+    return first_beat_stretched * 1_000.0
 
 
 def _find_first_beat_ms(seg: AudioSegment, bpm: float) -> float:
@@ -622,12 +637,18 @@ def generate_mix(
         out_tail = current_seg[mix_start_ms:]
 
         # Cap crossfade zone to 32 bars max — avoids OOM on large tails.
-        # Anything beyond 32 bars before the mix point becomes extra body.
+        # IMPORTANT: skip by an INTEGER number of phrases from the tail start so
+        # the new out_tail still begins at a phrase boundary from beat-1.
+        # (Slicing from the back with [-max_xfade_ms:] was wrong when the track
+        # length is not a multiple of phrase_ms — it introduced a sub-phrase offset
+        # equal to the phase-trim amount, causing beat drift.)
         max_xfade_ms = _bars_to_ms(32, master_bpm)
-        if len(out_tail) > max_xfade_ms:
-            extra = out_tail[:-max_xfade_ms]
-            out_tail = out_tail[-max_xfade_ms:]
-            # extra goes to disk as part of the body
+        if len(out_tail) > max_xfade_ms and phrase_ms > 0:
+            # How many complete phrases to skip from the front of out_tail?
+            phrases_to_skip = (len(out_tail) - max_xfade_ms) // phrase_ms
+            skip_ms = phrases_to_skip * phrase_ms  # integer multiple → phrase-aligned
+            extra = out_tail[:skip_ms]
+            out_tail = out_tail[skip_ms:]
             if len(extra) > 200:
                 disk_parts.append(_save_to_disk(extra, "body_extra"))
             del extra
