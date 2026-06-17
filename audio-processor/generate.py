@@ -312,13 +312,30 @@ def _echo_out_transition(
 
 # ── Main engine ───────────────────────────────────────────────────────────────
 
+def _load_seg(spec: TrackSpec) -> AudioSegment:
+    """Load one track — used for lazy per-track loading to avoid OOM."""
+    try:
+        seg = AudioSegment.from_file(spec.file_path)
+        seg = _ensure_stereo(seg).set_frame_rate(44100)
+        seg = _normalize_loudness(seg)
+        return seg
+    except Exception as exc:
+        logger.error("Failed to load %s: %s", spec.file_path, exc)
+        raise RuntimeError(f"Cannot load track {spec.track_id}: {exc}") from exc
+
+
 def generate_mix(
     tracks: list[TrackSpec],
     transitions: list[TransitionSpec],
     mix_style: str,
     progress_callback=None,
 ) -> bytes:
-    """Generate a DJ mix and return 320 kbps MP3 bytes."""
+    """Generate a DJ mix and return 320 kbps MP3 bytes.
+
+    Tracks are loaded lazily — only two segments live in RAM at a time
+    (accumulated mix + next incoming track) to prevent OOM on Railway.
+    """
+    import gc
     assert len(tracks) >= 1
     total_steps = len(tracks) + len(transitions) + 2
 
@@ -327,27 +344,22 @@ def generate_mix(
             pct = min(95, int(step / total_steps * 100))
             progress_callback(pct, msg)
 
-    segments: list[AudioSegment] = []
-    for i, spec in enumerate(tracks):
-        _progress(i, f"Loading {spec.track_id[:8]}...")
-        try:
-            seg = AudioSegment.from_file(spec.file_path)
-            seg = _ensure_stereo(seg).set_frame_rate(44100)
-            seg = _normalize_loudness(seg)
-            segments.append(seg)
-        except Exception as exc:
-            logger.error("Failed to load %s: %s", spec.file_path, exc)
-            raise RuntimeError(f"Cannot load track {spec.track_id}: {exc}") from exc
+    # ── Load first track only ─────────────────────────────────────────────────
+    _progress(0, f"Loading track 1/{len(tracks)}...")
+    result = _load_seg(tracks[0])
 
-    if len(segments) == 1:
+    if len(tracks) == 1:
         _progress(total_steps - 1, "Exporting...")
         buf = io.BytesIO()
-        segments[0].export(buf, format="mp3", bitrate="320k")
+        result.export(buf, format="mp3", bitrate="320k")
         return buf.getvalue()
 
-    result = segments[0]
+    # ── Mix — load each next track just-in-time, free after use ───────────────
+    for i, trans in enumerate(transitions):
+        # Load the next track just before it is needed (only 2 segs in RAM)
+        _progress(1 + i, f"Loading track {i + 2}/{len(tracks)}...")
+        in_raw = _load_seg(tracks[i + 1])
 
-    for i, (trans, in_raw) in enumerate(zip(transitions, segments[1:])):
         label = trans.transition_type
         _progress(
             len(tracks) + i,
@@ -365,7 +377,7 @@ def generate_mix(
                 result = _filter_sweep_transition(result, in_raw, fade_ms, bpm_a, bpm_b)
             elif label == "echo_out":
                 result = _echo_out_transition(result, in_raw, fade_ms, bpm_a, bpm_b)
-            else:
+            else:  # crossfade -> 3-band DJ crossfade
                 result = _three_band_crossfade(result, in_raw, fade_ms, bpm_a, bpm_b)
         except Exception as exc:
             logger.warning(
@@ -375,6 +387,11 @@ def generate_mix(
             cf = max(1_000, min(fade_ms, 8_000, len(result) - 500, len(in_raw) - 500))
             result = result.append(in_raw, crossfade=cf)
 
+        # Free the incoming track immediately — no longer needed
+        del in_raw
+        gc.collect()
+
+    # ── Master & export ───────────────────────────────────────────────────────
     _progress(total_steps - 1, "Mastering and encoding...")
     result = _normalize_loudness(result, target_dbfs=-11.0)
     buf = io.BytesIO()
