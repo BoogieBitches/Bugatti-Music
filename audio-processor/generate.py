@@ -292,9 +292,11 @@ def _find_first_beat_ms(seg: AudioSegment, bpm: float) -> float:
     peaks     = np.where(flux > threshold)[0]
     if len(peaks) == 0:
         return 0.0
-    raw_ms   = float(peaks[0] * 10)
-    beat_ms  = 60_000.0 / max(bpm, 40)
-    return raw_ms % beat_ms
+    # Return the time of the first detected kick (= beat-1 timestamp in ms).
+    # Previous code used `raw_ms % beat_ms` which is wrong for tracks with an
+    # intro: e.g. first kick at 1600ms, beat period 500ms → 1600 % 500 = 100ms,
+    # trimming only 100ms instead of 1600ms, leaving beat-1 at 1500ms.
+    return float(peaks[0] * 10)
 
 
 # ── Mix point calculation (the core v6 fix) ───────────────────────────────────
@@ -461,22 +463,35 @@ def _filter_sweep_v2(
     in_seg: AudioSegment,
     bpm: float = 128.0,
 ) -> AudioSegment:
-    """Filter sweep: high-pass out_tail while fading in in_seg. Pre-split version."""
+    """Filter sweep: high-pass out_tail while fading in in_seg. Pre-split version.
+
+    Invariant: returned segment starts at in_seg's beat-1 (position 0 of in_seg).
+
+    Uses overlay (not sequential append) so beat-1 of in_seg stays at t=0 of
+    the returned segment. Sequential append was wrong: it put in_seg's beat-1
+    at t = T - cf_ms, breaking the phrase-tracking invariant for subsequent
+    transitions.
+    """
     T = len(out_tail)
     try:
         swept = _eq_hp(out_tail, cutoff=350).fade_out(T)
     except Exception:
         swept = out_tail.fade_out(T)
 
+    # Overlay: high-passed/fading outgoing track sits on top of in_seg.
+    # in_seg is at beat-1 from t=0 and plays at full amplitude underneath.
+    # The outgoing track sweeps up and fades out over the same T-ms window.
     in_head = _pad_or_trim(in_seg[:T], T)
+    swept   = _pad_or_trim(swept,      T)
     in_rest = in_seg[T:]
 
-    cf_ms = max(1_000, min(T // 4, 8_000))
     try:
-        mixed = swept.append(in_head, crossfade=cf_ms)
+        # -3 dB attenuation on outgoing so bass doesn't clash during the sweep
+        mixed = in_head.overlay(swept - 3)
     except Exception:
-        mixed = swept + in_head
+        mixed = in_head.overlay(swept)
 
+    # Invariant maintained: mixed starts at in_seg[0] = beat-1.
     return mixed + in_rest
 
 
