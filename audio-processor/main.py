@@ -309,8 +309,10 @@ def _run_generation(job_id: str, req: GenerateRequest):
                     stored_path = str(candidate)
                     break
             if not stored_path:
-                raise RuntimeError(f"Stored file not found for track_id={tid!r}. "
-                                   "Make sure /audio/analyze was called first.")
+                raise RuntimeError(
+                    f"Track {tid!r} not found — the server restarted and cleared uploads. "
+                    "Please re-upload your tracks (re-run Analyze on each file) and try again."
+                )
             track_specs.append(TrackSpec(
                 track_id=tid,
                 file_path=stored_path,
