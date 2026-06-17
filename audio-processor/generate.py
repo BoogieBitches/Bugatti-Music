@@ -178,49 +178,59 @@ def _eq_mh(seg: AudioSegment) -> AudioSegment:
 
 # ── Beatmatching ──────────────────────────────────────────────────────────────
 
-def _time_stretch_zone(seg: AudioSegment, source_bpm: float, target_bpm: float) -> AudioSegment:
+def _atempo_chain(ratio: float) -> str:
+    """Build ffmpeg filter string for any tempo ratio (chains atempo for ratios outside 0.5-2.0)."""
+    filters = []
+    r = float(ratio)
+    while r > 2.0:
+        filters.append("atempo=2.0")
+        r /= 2.0
+    while r < 0.5:
+        filters.append("atempo=0.5")
+        r /= 0.5
+    filters.append("atempo=%.6f" % r)
+    return ",".join(filters)
+
+
+def _time_stretch_to_bpm(seg: AudioSegment, source_bpm: float, target_bpm: float) -> AudioSegment:
+    """Pitch-preserving BPM sync via ffmpeg atempo filter.
+
+    Works for ANY ratio — e.g. 70 BPM -> 128 BPM.
+    Unlike scipy.signal.resample this never changes pitch.
+    Applied to the FULL track so beats stay aligned throughout the mix.
     """
-    Time-stretch a short zone to target_bpm.
-    pyrubberband: high quality pitch-preserving stretch.
-    Fallback: scipy resample (changes pitch slightly but no system deps).
-    Only applied when BPM delta is 2-15%.
-    """
+    import subprocess, os
     if source_bpm <= 0 or target_bpm <= 0:
         return seg
-    ratio_lib = target_bpm / source_bpm
-    ratio_pyrb = source_bpm / target_bpm
-    if abs(ratio_lib - 1.0) < 0.02 or not (0.85 <= ratio_lib <= 1.15):
+    ratio = target_bpm / source_bpm   # >1 = speed up, <1 = slow down
+    if abs(ratio - 1.0) < 0.005:      # <0.5 % difference -> skip
         return seg
 
-    sr = seg.frame_rate
-    raw = np.array(seg.get_array_of_samples(), dtype=np.float32) / 32768.0
-
+    uid = abs(hash(id(seg))) % 10_000_000
+    tmp_in  = "/tmp/_bpm_in_%d.wav"  % uid
+    tmp_out = "/tmp/_bpm_out_%d.wav" % uid
     try:
-        if _HAS_PYRB:
-            if seg.channels == 2:
-                stretched_2d = pyrb.time_stretch(raw.reshape(-1, 2), sr, ratio_pyrb)
-                out = stretched_2d.flatten().astype(np.float32)
-            else:
-                out = pyrb.time_stretch(raw, sr, ratio_pyrb).astype(np.float32)
-        else:
-            # scipy resample fallback — no system deps required
-            new_len = int(round(len(raw) / ratio_lib))
-            if seg.channels == 2:
-                L = sp.resample(raw[0::2], int(round(len(raw[0::2]) / ratio_lib))).astype(np.float32)
-                R = sp.resample(raw[1::2], int(round(len(raw[1::2]) / ratio_lib))).astype(np.float32)
-                n = min(len(L), len(R))
-                out = np.empty(n * 2, dtype=np.float32)
-                out[0::2] = L[:n]
-                out[1::2] = R[:n]
-            else:
-                out = sp.resample(raw, new_len).astype(np.float32)
-
-        int16 = (np.clip(out, -1.0, 1.0) * 32767).astype(np.int16)
-        return AudioSegment(int16.tobytes(), frame_rate=sr, sample_width=2, channels=seg.channels)
+        seg.export(tmp_in, format="wav")
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", tmp_in,
+             "-filter:a", _atempo_chain(ratio), tmp_out],
+            check=True, capture_output=True,
+        )
+        result = AudioSegment.from_file(tmp_out, format="wav")
+        logger.info("BPM sync %.1f -> %.1f (atempo %.4f)", source_bpm, target_bpm, ratio)
+        return result
     except Exception as exc:
-        logger.warning("time_stretch failed (%s) — using original", exc)
+        logger.warning("ffmpeg atempo failed (%.3f): %s — using original tempo", ratio, exc)
         return seg
+    finally:
+        for p in (tmp_in, tmp_out):
+            try: os.unlink(p)
+            except Exception: pass
 
+
+# kept for internal use by transition helpers (now always called with equal BPMs)
+def _time_stretch_zone(seg: AudioSegment, source_bpm: float, target_bpm: float) -> AudioSegment:
+    return _time_stretch_to_bpm(seg, source_bpm, target_bpm)
 
 # ── Transition engines ────────────────────────────────────────────────────────
 
@@ -393,6 +403,14 @@ def generate_mix(
 
         _progress(1 + i, "Loading track %d/%d..." % (i + 2, len(tracks)))
         in_raw = _load_seg(tracks[i + 1])
+
+        # BPM sync: stretch incoming track to outgoing BPM (pitch-preserving)
+        if abs(bpm_b - bpm_a) > 0.5:
+            _progress(
+                1 + i,
+                "BPM sync %d -> %d BPM..." % (int(round(bpm_b)), int(round(bpm_a))),
+            )
+            in_raw = _time_stretch_to_bpm(in_raw, bpm_b, bpm_a)
 
         label = trans.transition_type
         _progress(
