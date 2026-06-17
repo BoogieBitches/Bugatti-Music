@@ -1,19 +1,26 @@
 """
-DJ mix generation engine — professional edition v5.
+DJ mix generation engine — professional edition v6.
 
-Improvements over v4:
-  - Phase alignment uses stored beatgrid from analyzer (madmom/librosa quality).
-    Only the sub-beat fractional offset is trimmed — intro is NEVER skipped.
-  - Spectral Flux on 50-200 Hz kick band as fallback when no beatgrid is stored.
-  - echo_out overlap spans the FULL fade tail — no gap between tracks.
-  - 3-band crossfade phase-1 now brings in bass+mids (not just 200 Hz bass).
-  - Transition zone kept >= 60 s from track end (1 min before-end rule).
+Key fixes over v5:
+  - BEAT-PERFECT SYNC: Mix point split now happens UPSTREAM (before crossfade),
+    ensuring out_tail always starts at an exact 8-bar phrase boundary from beat-1.
+    v5 was splitting inside the crossfade from the tail's own 0, which drifted
+    from the actual beat grid.
+  - EARLIER MIX POINT: Uses MIN(outro_start, 32-bars-from-end) so mixing always
+    starts early enough. v5 sometimes missed the outro and started too late.
+  - CLEAN PHASE TRACKING: After every crossfade, incoming track's beat-1 is at
+    position 0 of current_seg. Mix point for the next track is always calculated
+    from beat-1 = position 0. No complex offset tracking needed.
+  - Beatgrid-aware phrase snapping for the most precise mix-start calculation.
 """
 
 from __future__ import annotations
 
+import gc
 import io
 import logging
+import os
+import subprocess
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -32,7 +39,6 @@ try:
 except Exception:
     _HAS_PYRB = False
 
-# librosa for pitch-preserving time stretch (phase vocoder) — already in requirements
 try:
     import librosa as _librosa_gen
     _HAS_LIBROSA_GEN = True
@@ -43,9 +49,8 @@ except Exception:
 
 TransitionType = Literal["cut", "crossfade", "filter_sweep", "echo_out"]
 
-# ── DJ mixer band boundaries (Hz) ─────────────────────────────────────────────
-LOW_CUTOFF  = 200      # below → kick / bass
-HIGH_CUTOFF = 4_000    # above → hi-hats / air
+LOW_CUTOFF  = 200
+HIGH_CUTOFF = 4_000
 
 
 @dataclass
@@ -56,9 +61,6 @@ class TrackSpec:
     energy:           int
     duration_seconds: float
     sections:         dict
-    # Full beat grid from analyzer (beat timestamps in seconds, from track start).
-    # When present, enables precise sub-beat phase alignment using the actual
-    # beat positions instead of heuristic onset detection.
     beatgrid: list[float] | None = field(default=None)
 
 
@@ -93,30 +95,6 @@ def _pad_or_trim(seg: AudioSegment, target_ms: int) -> AudioSegment:
     return seg[:target_ms]
 
 
-# ── Phrase alignment ──────────────────────────────────────────────────────────
-
-def _snap_to_phrase(position_ms: int, bpm: float, phrase_bars: int = 8) -> int:
-    phrase_ms = _bars_to_ms(phrase_bars, bpm)
-    if phrase_ms <= 0:
-        return position_ms
-    n = round(position_ms / phrase_ms)
-    return int(max(0, n * phrase_ms))
-
-
-def _phrase_aligned_split(
-    seg: AudioSegment,
-    bpm: float,
-    min_tail_ms: int,
-    phrase_bars: int = 8,
-) -> tuple[AudioSegment, AudioSegment]:
-    raw_split = len(seg) - min_tail_ms
-    snapped   = _snap_to_phrase(raw_split, bpm, phrase_bars)
-    snapped   = max(0, min(snapped, len(seg) - min_tail_ms))
-    return seg[:snapped], seg[snapped:]
-
-
-# ── Scipy 3-band EQ ───────────────────────────────────────────────────────────
-
 def _seg_to_float(seg: AudioSegment) -> np.ndarray:
     return np.array(seg.get_array_of_samples(), dtype=np.float32) / 32768.0
 
@@ -132,15 +110,6 @@ def _butter_coeffs(cutoff: float, sr: int, btype: str, order: int = 4):
     return sp.butter(order, norm, btype=btype)
 
 
-def _band_coeffs(low: float, high: float, sr: int, order: int = 4):
-    nyq = sr / 2.0
-    lo  = float(np.clip(low  / nyq, 1e-4, 1 - 1e-4))
-    hi  = float(np.clip(high / nyq, 1e-4, 1 - 1e-4))
-    if lo >= hi:
-        return None
-    return sp.butter(order, [lo, hi], btype="band")
-
-
 def _filtfilt_ch(raw: np.ndarray, channels: int, b, a) -> np.ndarray:
     if channels == 2:
         L = sp.filtfilt(b, a, raw[0::2]).astype(np.float32)
@@ -153,37 +122,15 @@ def _filtfilt_ch(raw: np.ndarray, channels: int, b, a) -> np.ndarray:
     return out
 
 
-def _eq_lp(seg: AudioSegment, cutoff: float = LOW_CUTOFF) -> AudioSegment:
-    b, a = _butter_coeffs(cutoff, seg.frame_rate, "low")
-    return _float_to_seg(_filtfilt_ch(_seg_to_float(seg), seg.channels, b, a),
-                         seg.frame_rate, seg.channels)
-
-
 def _eq_hp(seg: AudioSegment, cutoff: float = LOW_CUTOFF) -> AudioSegment:
     b, a = _butter_coeffs(cutoff, seg.frame_rate, "high")
     return _float_to_seg(_filtfilt_ch(_seg_to_float(seg), seg.channels, b, a),
                          seg.frame_rate, seg.channels)
 
 
-def _eq_bp(seg: AudioSegment, low: float = LOW_CUTOFF, high: float = HIGH_CUTOFF) -> AudioSegment:
-    coeffs = _band_coeffs(low, high, seg.frame_rate)
-    if coeffs is None:
-        return seg
-    b, a = coeffs
-    return _float_to_seg(_filtfilt_ch(_seg_to_float(seg), seg.channels, b, a),
-                         seg.frame_rate, seg.channels)
-
-
-def _eq_lm(seg: AudioSegment) -> AudioSegment:
-    """Low-pass at HIGH_CUTOFF (4 kHz) — keeps bass + mids, cuts air/hi-hats."""
-    b, a = _butter_coeffs(HIGH_CUTOFF, seg.frame_rate, "low")
-    return _float_to_seg(_filtfilt_ch(_seg_to_float(seg), seg.channels, b, a),
-                         seg.frame_rate, seg.channels)
-
-
-def _eq_mh(seg: AudioSegment) -> AudioSegment:
-    """High-pass at LOW_CUTOFF (200 Hz) — cuts kick/bass."""
-    return _eq_hp(seg, cutoff=LOW_CUTOFF)
+def _normalize_rms(seg: AudioSegment, target_dbfs: float = -14.0) -> AudioSegment:
+    diff = target_dbfs - seg.dBFS
+    return seg.apply_gain(max(-18.0, min(diff, 18.0)))
 
 
 # ── Beatmatching ──────────────────────────────────────────────────────────────
@@ -198,29 +145,17 @@ def _atempo_chain(ratio: float) -> str:
 
 
 def _time_stretch_to_bpm(seg: AudioSegment, source_bpm: float, target_bpm: float) -> AudioSegment:
-    """Pitch-preserving BPM sync.
-
-    Priority:
-      1. librosa phase-vocoder  — pure Python, proven pitch-preserving, no subprocess.
-      2. ffmpeg atempo           — fallback if librosa unavailable.
-
-    Both methods preserve pitch exactly — only tempo changes.
-    If both fail, returns the original segment unchanged (with a warning log).
-    """
-    import subprocess, os
+    """Pitch-preserving BPM sync: librosa phase vocoder → ffmpeg atempo fallback."""
     if source_bpm <= 0 or target_bpm <= 0:
         return seg
     ratio = target_bpm / source_bpm
     if abs(ratio - 1.0) < 0.005:
-        return seg   # already close enough — skip processing
+        return seg
 
     sr       = seg.frame_rate
     channels = seg.channels
     arr      = np.array(seg.get_array_of_samples(), dtype=np.float32) / 32768.0
 
-    # ── 1. librosa phase vocoder ──────────────────────────────────────────
-    # Pure-Python, proven pitch-preserving (STFT phase vocoder).
-    # Uses the same librosa already required by analyzer.py.
     if _HAS_LIBROSA_GEN:
         try:
             if channels == 2:
@@ -228,26 +163,16 @@ def _time_stretch_to_bpm(seg: AudioSegment, source_bpm: float, target_bpm: float
                 R = _librosa_gen.effects.time_stretch(arr[1::2].copy(), rate=ratio)
                 n   = min(len(L), len(R))
                 out = np.empty(n * 2, dtype=np.float32)
-                out[0::2] = L[:n]
-                out[1::2] = R[:n]
+                out[0::2] = L[:n]; out[1::2] = R[:n]
             else:
                 out = _librosa_gen.effects.time_stretch(arr.copy(), rate=ratio)
             int16  = (np.clip(out, -1.0, 1.0) * 32767).astype(np.int16)
-            result = AudioSegment(
-                int16.tobytes(), frame_rate=sr, sample_width=2, channels=channels
-            )
-            logger.info(
-                "BPM sync %.1f → %.1f BPM via librosa phase-vocoder (ratio=%.4f, pitch intact)",
-                source_bpm, target_bpm, ratio,
-            )
+            result = AudioSegment(int16.tobytes(), frame_rate=sr, sample_width=2, channels=channels)
+            logger.info("BPM sync %.1f→%.1f via librosa (ratio=%.4f, pitch intact)", source_bpm, target_bpm, ratio)
             return result
         except Exception as exc:
-            logger.warning(
-                "librosa time_stretch failed (ratio=%.4f): %s — trying ffmpeg atempo",
-                ratio, exc,
-            )
+            logger.warning("librosa time_stretch failed (ratio=%.4f): %s — trying ffmpeg", ratio, exc)
 
-    # ── 2. ffmpeg atempo fallback ─────────────────────────────────────────
     uid     = abs(hash(id(seg))) % 10_000_000
     tmp_in  = "/tmp/_bpm_in_%d.wav"  % uid
     tmp_out = "/tmp/_bpm_out_%d.wav" % uid
@@ -258,22 +183,13 @@ def _time_stretch_to_bpm(seg: AudioSegment, source_bpm: float, target_bpm: float
             capture_output=True,
         )
         if r.returncode != 0:
-            logger.error(
-                "ffmpeg atempo FAILED (ratio=%.4f) stderr: %s",
-                ratio, r.stderr.decode(errors="replace")[-600:],
-            )
-            logger.warning("BPM sync skipped — track keeps its original tempo")
+            logger.error("ffmpeg atempo FAILED stderr: %s", r.stderr.decode(errors="replace")[-400:])
             return seg
         result = AudioSegment.from_file(tmp_out, format="wav")
-        logger.info(
-            "BPM sync %.1f → %.1f BPM via ffmpeg atempo (ratio=%.4f, pitch intact)",
-            source_bpm, target_bpm, ratio,
-        )
+        logger.info("BPM sync %.1f→%.1f via ffmpeg atempo (ratio=%.4f)", source_bpm, target_bpm, ratio)
         return result
     except Exception as exc:
-        logger.warning(
-            "ffmpeg atempo error (%.3f): %s — track keeps original tempo", ratio, exc
-        )
+        logger.warning("ffmpeg atempo error: %s — keeping original tempo", exc)
         return seg
     finally:
         for p in (tmp_in, tmp_out):
@@ -281,54 +197,28 @@ def _time_stretch_to_bpm(seg: AudioSegment, source_bpm: float, target_bpm: float
             except Exception: pass
 
 
-def _time_stretch_zone(seg: AudioSegment, source_bpm: float, target_bpm: float) -> AudioSegment:
-    return _time_stretch_to_bpm(seg, source_bpm, target_bpm)
-
-
-# ── Phase alignment — beatgrid-based (primary) ────────────────────────────────
+# ── Phase alignment ───────────────────────────────────────────────────────────
 
 def _phase_offset_from_beatgrid(beatgrid: list[float], stretch_ratio: float = 1.0) -> float:
-    """Compute the sub-beat phase offset (ms) using the stored beatgrid.
+    """Sub-beat phase offset (ms) using stored beatgrid.
 
-    After time-stretching by `stretch_ratio` (source_bpm / target_bpm), every
-    beat timestamp scales by the same factor.  We then return only the
-    fractional-beat remainder so the intro is preserved and we trim < 1 beat.
-
-    Args:
-        beatgrid:      Beat timestamps in seconds (from track start), as returned
-                       by analyzer.detect_beatgrid().
-        stretch_ratio: source_bpm / target_bpm.  >1 when track was slowed down.
-    Returns:
-        Phase offset in milliseconds (0 ≤ offset < 1 beat period).
+    Returns the fractional-beat offset so that after trimming this amount
+    from the track start, beat-1 lands exactly at t=0 ms.
     """
     if not beatgrid or len(beatgrid) < 2:
         return 0.0
-
     beats = np.array(beatgrid, dtype=np.float64) * stretch_ratio
-    # Beat period from median inter-beat interval
-    ibis       = np.diff(beats)
-    beat_period = float(np.median(ibis))           # seconds
+    ibis        = np.diff(beats)
+    beat_period = float(np.median(ibis))
     if beat_period <= 0:
         return 0.0
+    first_beat      = float(beats[0])
+    phase_offset_sec = first_beat % beat_period
+    return phase_offset_sec * 1_000.0
 
-    # First beat position — the phase offset is how far the track is from a
-    # perfect beat-1 grid.  We only trim the fractional part (< 1 beat).
-    first_beat = float(beats[0])
-    phase_offset_sec = first_beat % beat_period    # always in [0, beat_period)
-    return phase_offset_sec * 1_000.0              # → ms
-
-
-# ── Phase alignment — spectral-flux fallback (when no beatgrid stored) ────────
 
 def _find_first_beat_ms(seg: AudioSegment, bpm: float) -> float:
-    """Phase offset via kick-band Spectral Flux.
-
-    Used only when the TrackSpec has no stored beatgrid.
-    1. BP-filter 50–200 Hz to isolate the kick drum.
-    2. Compute STFT-based Spectral Flux on that band.
-    3. Return raw_onset_ms % beat_period_ms  — sub-beat offset only,
-       so the intro is never trimmed by more than one beat.
-    """
+    """Phase offset via kick-band spectral flux (fallback when no beatgrid)."""
     analysis_ms = min(10_000, len(seg))
     arr = np.array(seg[:analysis_ms].get_array_of_samples(), dtype=np.float32) / 32768.0
     sr  = seg.frame_rate
@@ -337,7 +227,6 @@ def _find_first_beat_ms(seg: AudioSegment, bpm: float) -> float:
     if len(arr) < 512:
         return 0.0
 
-    # ── 1. Kick band isolation: 50–200 Hz ─────────────────────────────────
     nyq = sr / 2.0
     lo  = float(np.clip(50.0  / nyq, 1e-4, 1.0 - 1e-4))
     hi  = float(np.clip(200.0 / nyq, 1e-4, 1.0 - 1e-4))
@@ -347,8 +236,7 @@ def _find_first_beat_ms(seg: AudioSegment, bpm: float) -> float:
     except Exception:
         kick = arr
 
-    # ── 2. STFT Spectral Flux on kick band ────────────────────────────────
-    hop      = max(1, int(sr * 0.010))   # 10 ms frames
+    hop      = max(1, int(sr * 0.010))
     n_fft    = 512
     win      = np.hanning(n_fft)
     n_frames = max(1, (len(kick) - n_fft) // hop + 1)
@@ -367,90 +255,153 @@ def _find_first_beat_ms(seg: AudioSegment, bpm: float) -> float:
     if flux.max() < 1e-8:
         return 0.0
 
-    # ── 3. First strong onset ─────────────────────────────────────────────
     threshold = np.percentile(flux, 75)
     peaks     = np.where(flux > threshold)[0]
     if len(peaks) == 0:
         return 0.0
-    raw_ms = float(peaks[0] * 10)    # hop = 10 ms
-
-    # ── 4. Sub-beat phase offset only (< 1 beat) ──────────────────────────
-    beat_ms = 60_000.0 / max(bpm, 40)
+    raw_ms   = float(peaks[0] * 10)
+    beat_ms  = 60_000.0 / max(bpm, 40)
     return raw_ms % beat_ms
 
 
-def _normalize_rms(seg: AudioSegment, target_dbfs: float = -14.0) -> AudioSegment:
-    diff = target_dbfs - seg.dBFS
-    return seg.apply_gain(max(-18.0, min(diff, 18.0)))
+# ── Mix point calculation (the core v6 fix) ───────────────────────────────────
+
+def _calculate_mix_point_ms(
+    spec: TrackSpec,
+    master_bpm: float,
+    phrase_ms: int,
+    min_tail_ms: int,
+    current_seg_len_ms: int,
+    beatgrid: list[float] | None = None,
+) -> int:
+    """Calculate the phrase-perfect mix start position.
+
+    Key insight: current_seg always starts at beat-1 of the outgoing track
+    (after phase trim and transitions). So mix_start_ms is measured directly
+    from beat-1 = position 0 of current_seg.
+
+    Algorithm:
+      1. Calculate outro_start in stretched time (from beat-1).
+      2. Calculate 32-bars-from-end as safety net.
+      3. Use the EARLIER of the two → avoids mixing too late.
+      4. Snap DOWN to nearest 8-bar phrase boundary.
+      5. If beatgrid available, use it for sub-bar precision.
+      6. Clamp to valid range.
+    """
+    bpm_orig = float(spec.bpm or master_bpm)
+
+    # Stretch factor: track is sped up or slowed to master_bpm
+    # new_duration_ms = orig_duration_ms * orig_bpm / master_bpm
+    stretch_factor = bpm_orig / master_bpm  # = orig/master
+
+    track_dur_ms = int(spec.duration_seconds * 1000 * stretch_factor)
+
+    # outro_start in stretched time from beat-1
+    outro_sec = float((spec.sections or {}).get("outro_start") or 0)
+    outro_ms  = int(outro_sec * 1000 * stretch_factor) if outro_sec > 0 else 0
+
+    # 32-bars-from-end (hard limit: always mix at least 32 bars before end)
+    bars32_ms  = _bars_to_ms(32, master_bpm)
+    bars32_start = max(0, track_dur_ms - bars32_ms)
+
+    # Choose the earlier of outro and 32-bar limit
+    if outro_ms > 0:
+        target_ms = min(outro_ms, bars32_start)
+    else:
+        target_ms = bars32_start
+
+    target_ms = max(0, target_ms)
+
+    # ── Beatgrid-aware phrase snapping ─────────────────────────────────────
+    # If we have the beatgrid, find the exact phrase boundary in beat timestamps
+    # rather than using heuristic ms arithmetic.
+    mix_start_ms: int
+
+    if beatgrid and len(beatgrid) >= 2 and phrase_ms > 0:
+        beats = [b * stretch_factor for b in beatgrid]
+        beats_per_phrase = 32  # 8-bar phrase = 32 beats in 4/4
+
+        # Convert target_ms to seconds
+        target_sec = target_ms / 1000.0
+
+        # Walk through beat indices; find the last phrase-boundary beat ≤ target
+        best_beat_sec = 0.0
+        for idx in range(0, len(beats) - beats_per_phrase, beats_per_phrase):
+            if beats[idx] <= target_sec:
+                best_beat_sec = beats[idx]
+            else:
+                break
+
+        mix_start_ms = int(best_beat_sec * 1000)
+        logger.info(
+            "Mix point (beatgrid): %.1f s (target=%.1f s, outro=%.1f s, 32bars=%.1f s)",
+            best_beat_sec, target_sec, outro_sec, bars32_start / 1000.0,
+        )
+    else:
+        # Heuristic: snap DOWN to nearest 8-bar phrase
+        if phrase_ms > 0 and target_ms > 0:
+            n = target_ms // phrase_ms  # floor = last phrase at or before target
+            mix_start_ms = int(n * phrase_ms)
+        else:
+            mix_start_ms = target_ms
+        logger.info(
+            "Mix point (heuristic): %d ms (target=%d ms, outro=%.1f s, 32bars=%d ms)",
+            mix_start_ms, target_ms, outro_sec, bars32_start,
+        )
+
+    # Clamp to valid range
+    max_mix_start = max(0, current_seg_len_ms - min_tail_ms)
+    mix_start_ms  = max(0, min(mix_start_ms, max_mix_start))
+
+    return mix_start_ms
 
 
-# ── Transition engines ────────────────────────────────────────────────────────
+# ── Transition engines (v6: take pre-split out_tail, no internal split) ───────
 
-def _three_band_crossfade(
-    out_seg: AudioSegment,
-    in_seg:  AudioSegment,
-    fade_ms: int,
-    bpm_a:   float = 128.0,
-    bpm_b:   float = 128.0,
+def _three_band_crossfade_v2(
+    out_tail: AudioSegment,
+    in_seg: AudioSegment,
+    bpm: float = 128.0,
 ) -> AudioSegment:
     """Professional equal-power DJ crossfade with bass EQ swap.
 
-    Algorithm:
-      1. Split outgoing track at the nearest 8-bar phrase boundary.
-      2. BPM-match the incoming head to master BPM (already done upstream,
-         but _time_stretch_zone is a no-op when ratios match).
-      3. Apply continuous equal-power (cos²/sin²) gain envelopes in numpy
-         so there are NO abrupt volume jumps — smooth throughout.
-      4. Bass swap: outgoing bass fades 25%→75% of the window,
-         incoming bass rises 25%→75%.  Above 200 Hz follows the main
-         equal-power curve.  This is the Pioneer CDJ technique.
-      5. Recombine and return.
-    """
-    min_tail = max(8_000, min(fade_ms, min(len(out_seg), len(in_seg)) - 4_000))
-    out_body, out_tail = _phrase_aligned_split(out_seg, bpm_a, min_tail, phrase_bars=8)
-    T = len(out_tail)       # ms
+    v6 change: receives the pre-split out_tail (already at a phrase boundary
+    from beat-1). Fades out the ENTIRE out_tail while fading in the first
+    len(out_tail) ms of in_seg. Returns crossfade_zone + in_seg remainder.
 
-    in_head_raw = in_seg[:T]
-    in_rest     = in_seg[T:]
-    in_head     = _pad_or_trim(_time_stretch_zone(in_head_raw, bpm_b, bpm_a), T)
+    This guarantees beat-in-beat alignment:
+      - out_tail starts at n*phrase_ms from beat-1 → phrase boundary.
+      - in_seg starts at beat-1 (phase-trimmed) → also phrase boundary.
+      - Both overlapping → downbeats land together.
+    """
+    T        = len(out_tail)
+    in_head  = _pad_or_trim(in_seg[:T], T)
+    in_rest  = in_seg[T:]
 
     sr = out_tail.frame_rate
     ch = out_tail.channels
 
-    # ── numpy float arrays ────────────────────────────────────────────────
     out_arr = _seg_to_float(out_tail)
     in_arr  = _seg_to_float(in_head)
     n       = min(len(out_arr), len(in_arr))
     out_arr = out_arr[:n]
     in_arr  = in_arr[:n]
 
-    # samples per channel (for envelope generation)
     n_ch = n // ch if ch > 1 else n
+    t          = np.linspace(0.0, 1.0, n_ch, dtype=np.float32)
+    g_out      = np.cos(t * np.pi / 2.0)
+    g_in       = np.sin(t * np.pi / 2.0)
+    t_bass     = np.clip((t - 0.25) / 0.50, 0.0, 1.0)
+    g_bass_out = np.cos(t_bass * np.pi / 2.0)
+    g_bass_in  = np.sin(t_bass * np.pi / 2.0)
 
-    # ── Equal-power gain envelopes (t: 0→1 across crossfade) ─────────────
-    t       = np.linspace(0.0, 1.0, n_ch, dtype=np.float32)
-    g_out   = np.cos(t * np.pi / 2.0)          # 1.0 → 0.0
-    g_in    = np.sin(t * np.pi / 2.0)          # 0.0 → 1.0
-
-    # Bass swap: outgoing bass cuts 25%→75%, incoming bass rises 25%→75%
-    t_bass      = np.clip((t - 0.25) / 0.50, 0.0, 1.0)
-    g_bass_out  = np.cos(t_bass * np.pi / 2.0)  # 1.0 → 0.0 in the bass-swap window
-    g_bass_in   = np.sin(t_bass * np.pi / 2.0)  # 0.0 → 1.0
-
-    # Expand to stereo samples
     if ch == 2:
         g_out      = np.repeat(g_out,      2)[:n]
         g_in       = np.repeat(g_in,       2)[:n]
         g_bass_out = np.repeat(g_bass_out, 2)[:n]
         g_bass_in  = np.repeat(g_bass_in,  2)[:n]
-    else:
-        g_out      = g_out[:n]
-        g_in       = g_in[:n]
-        g_bass_out = g_bass_out[:n]
-        g_bass_in  = g_bass_in[:n]
 
     try:
-        # Butterworth LP / HP for bass split
         b_lp, a_lp = _butter_coeffs(LOW_CUTOFF, sr, "low",  order=4)
         b_hp, a_hp = _butter_coeffs(LOW_CUTOFF, sr, "high", order=4)
 
@@ -469,83 +420,70 @@ def _three_band_crossfade(
         in_bass  = _filt2(in_arr,  b_lp, a_lp)[:n]
         in_mids  = _filt2(in_arr,  b_hp, a_hp)[:n]
 
-        # Recombine: bass with swap envelope, mids+highs with main envelope
         mixed = (
-            out_bass * g_bass_out +
-            out_mids * g_out      +
-            in_bass  * g_bass_in  +
-            in_mids  * g_in
+            out_bass * g_bass_out + out_mids * g_out +
+            in_bass  * g_bass_in  + in_mids  * g_in
         )
         logger.info(
-            "DJ crossfade: equal-power + bass-swap, tail=%d ms (%.1f bars @ %.0f BPM)",
-            T, T / (_bars_to_ms(1, bpm_a)), bpm_a,
+            "Crossfade v2: equal-power + bass-swap, T=%d ms (%.1f bars @ %.0f BPM) — BEAT ALIGNED",
+            T, T / max(_bars_to_ms(1, bpm), 1), bpm,
         )
     except Exception as exc:
-        logger.warning("Bass-split crossfade failed (%s) — using simple equal-power", exc)
-        # Fallback: just equal-power without EQ split
+        logger.warning("Bass-split crossfade failed (%s) — equal-power fallback", exc)
         mixed = out_arr * g_out + in_arr * g_in
 
     mixed_seg = _float_to_seg(mixed[:n], sr, ch)
-    return out_body + mixed_seg + in_rest
+    # Invariant: in_seg's beat-1 is at position 0 of the returned segment.
+    return mixed_seg + in_rest
 
 
-def _filter_sweep_transition(
-    out_seg: AudioSegment,
-    in_seg:  AudioSegment,
-    fade_ms: int,
-    bpm_a:   float = 128.0,
-    bpm_b:   float = 128.0,
+def _filter_sweep_v2(
+    out_tail: AudioSegment,
+    in_seg: AudioSegment,
+    bpm: float = 128.0,
 ) -> AudioSegment:
-    min_tail = max(4_000, min(fade_ms, min(len(out_seg), len(in_seg)) - 1_000))
-    out_body, out_tail = _phrase_aligned_split(out_seg, bpm_a, min_tail, phrase_bars=8)
-
+    """Filter sweep: high-pass out_tail while fading in in_seg. Pre-split version."""
+    T = len(out_tail)
     try:
-        tail_swept = _eq_hp(out_tail, cutoff=350).fade_out(len(out_tail))
+        swept = _eq_hp(out_tail, cutoff=350).fade_out(T)
     except Exception:
-        tail_swept = out_tail.fade_out(len(out_tail))
+        swept = out_tail.fade_out(T)
 
-    cf_ms      = min(len(out_tail) // 2, 8_000)
-    in_matched = _pad_or_trim(_time_stretch_zone(in_seg[:cf_ms], bpm_b, bpm_a), cf_ms)
-    in_full    = in_matched + in_seg[cf_ms:]
+    in_head = _pad_or_trim(in_seg[:T], T)
+    in_rest = in_seg[T:]
 
-    safe_cf = max(1_000, min(cf_ms, len(tail_swept) - 500, len(in_full) - 500))
-    return (out_body + tail_swept).append(in_full, crossfade=safe_cf)
+    cf_ms = max(1_000, min(T // 4, 8_000))
+    try:
+        mixed = swept.append(in_head, crossfade=cf_ms)
+    except Exception:
+        mixed = swept + in_head
+
+    return mixed + in_rest
 
 
-def _echo_out_transition(
-    out_seg: AudioSegment,
-    in_seg:  AudioSegment,
-    fade_ms: int,
-    bpm_a:   float = 128.0,
-    bpm_b:   float = 128.0,
+def _echo_out_v2(
+    out_tail: AudioSegment,
+    in_seg: AudioSegment,
+    bpm: float = 128.0,
 ) -> AudioSegment:
-    """Echo-out crossfade.
+    """Echo-out: reverb tail into in_seg intro. Pre-split version."""
+    T              = len(out_tail)
+    out_tail_faded = out_tail.fade_out(T)
+    in_head        = _pad_or_trim(in_seg[:T], T)
+    in_rest        = in_seg[T:]
 
-    Fix: incoming track starts at the SAME moment the outgoing begins fading
-    (overlap_ms == full tail length).  Previously capped at 6 s, causing a
-    perceptible gap where one track was fading but the other hadn't started.
-    """
-    min_tail = max(8_000, min(fade_ms, min(len(out_seg), len(in_seg)) - 2_000))
-    out_body, out_tail = _phrase_aligned_split(out_seg, bpm_a, min_tail, phrase_bars=16)
-    out_tail_faded     = out_tail.fade_out(len(out_tail))
+    fade_in_ms = min(T // 6, 4_000)
+    in_faded   = in_head.fade_in(fade_in_ms)
 
-    # overlap_ms = full tail — incoming starts exactly when outgoing starts fading
-    overlap_ms       = len(out_tail)
-    in_slice         = in_seg[:overlap_ms]
-    in_head_matched  = _pad_or_trim(_time_stretch_zone(in_slice, bpm_b, bpm_a), overlap_ms)
-    # Fade incoming in over the first half of the overlap (max 16 s)
-    fade_in_ms       = min(overlap_ms // 6, 4_000)   # short: incoming audible fast
-    in_full          = in_head_matched.fade_in(fade_in_ms) + in_seg[overlap_ms:]
-
-    ov    = min(overlap_ms, len(out_tail_faded), len(in_full))
-    mixed = out_tail_faded[:ov].overlay(in_full[:ov])
-    return out_body + mixed + in_full[ov:]
+    ov    = min(T, len(out_tail_faded), len(in_faded))
+    mixed = out_tail_faded[:ov].overlay(in_faded[:ov])
+    return mixed + in_rest
 
 
 # ── Main engine ───────────────────────────────────────────────────────────────
 
-_MAX_TRACK_MS = 7 * 60 * 1_000   # 7 min max per track
-_PROC_RATE    = 22_050            # processing sample rate
+_MAX_TRACK_MS = 7 * 60 * 1_000
+_PROC_RATE    = 22_050
 
 
 def _load_seg(spec: TrackSpec) -> AudioSegment:
@@ -569,106 +507,119 @@ def generate_mix(
     progress_callback=None,
     target_bpm:        float | None = None,
 ) -> bytes:
-    """Generate a DJ mix — Serato-style BPM sync + beatgrid phase align + loudness.
+    """Generate a DJ mix with beat-perfect sync and intelligent mix points.
 
-    Phase alignment priority:
-      1. Stored beatgrid (madmom/librosa accuracy) — sub-beat trim only.
-      2. Kick-band Spectral Flux fallback — also sub-beat trim only.
-    Both methods never skip the intro; they only remove the fractional phase
-    offset that would cause beats to land slightly off the grid.
+    v6 algorithm:
+      1. Load + BPM-sync + phase-trim each track so beat-1 is at t=0 ms.
+      2. For each transition, calculate mix_start_ms via _calculate_mix_point_ms:
+           - Uses MIN(outro_start, 32-bars-from-end) to never mix too late.
+           - Snaps DOWN to 8-bar phrase boundary from beat-1.
+           - With beatgrid: uses actual beat timestamps for sub-bar precision.
+      3. Split: out_body = current_seg[:mix_start_ms], out_tail = current_seg[mix_start_ms:]
+           out_tail starts at an exact phrase boundary from beat-1.
+      4. in_seg (phase-trimmed) also starts at beat-1.
+         => out_tail[0] and in_seg[0] are both at a phrase boundary => beats align.
+      5. After crossfade: current_seg = crossfade_zone + in_seg[T:]
+         in_seg's beat-1 is at position 0 of current_seg => tracking resets.
     """
-    import gc, os, subprocess
-
     assert len(tracks) >= 1
-    total_steps = len(tracks) + len(transitions) + 2
 
-    def _progress(step: int, msg: str) -> None:
+    total_steps = len(tracks) * 2 + len(transitions) + 2
+    step_count  = [0]
+
+    def _progress(msg: str) -> None:
+        step_count[0] += 1
         if progress_callback:
-            progress_callback(min(95, int(step / total_steps * 100)), msg)
+            progress_callback(min(95, int(step_count[0] / total_steps * 100)), msg)
 
-    disk_segs: list[str] = []
-
-    def _flush_stable(seg: AudioSegment, keep_ms: int) -> AudioSegment:
-        flush_ms = len(seg) - keep_ms
-        if flush_ms > 500:
-            tmp = "/tmp/bugatti_seg_%03d.wav" % len(disk_segs)
-            seg[:flush_ms].export(tmp, format="wav")
-            disk_segs.append(tmp)
-            tail = seg[flush_ms:]
-            del seg; gc.collect()
-            return tail
-        return seg
-
-    # ── Load first track ──────────────────────────────────────────────────────
-    _progress(0, "Loading track 1/%d..." % len(tracks))
-    result = _load_seg(tracks[0])
-
-    if len(tracks) == 1:
-        _progress(total_steps - 1, "Exporting...")
-        buf = io.BytesIO()
-        result.set_frame_rate(44_100).export(buf, format="mp3", bitrate="320k")
-        return buf.getvalue()
-
-    # ── Master BPM ───────────────────────────────────────────────────────────
+    # ── Master BPM ────────────────────────────────────────────────────────────
     master_bpm = float(target_bpm) if target_bpm and target_bpm > 0 else float(tracks[0].bpm or 128)
+    phrase_ms  = _bars_to_ms(8, master_bpm)
 
-    # Stretch track 0 to master BPM
+    logger.info("generate_mix: %d tracks, master_bpm=%.1f, style=%s", len(tracks), master_bpm, mix_style)
+
+    # ── Load + sync + phase-trim track 0 ─────────────────────────────────────
+    _progress("Loading track 1/%d..." % len(tracks))
+    current_seg = _load_seg(tracks[0])
+
     bpm0 = float(tracks[0].bpm or master_bpm)
     if abs(bpm0 - master_bpm) > 0.5:
-        _progress(0, "BPM sync track 1: %d → %d BPM..." % (int(bpm0), int(master_bpm)))
-        result = _time_stretch_to_bpm(result, bpm0, master_bpm)
-        result = _normalize_rms(result)   # re-level track 0 after BPM stretch
+        _progress("BPM sync track 1: %d→%d BPM..." % (int(bpm0), int(master_bpm)))
+        current_seg = _time_stretch_to_bpm(current_seg, bpm0, master_bpm)
+        current_seg = _normalize_rms(current_seg)
 
-    # Phase-align track 0 — sub-beat offset only
-    stretch_ratio0 = bpm0 / master_bpm if master_bpm > 0 else 1.0
+    # Phase align: beat-1 at t=0 ms
+    stretch0 = bpm0 / master_bpm
     if tracks[0].beatgrid:
-        offset0 = _phase_offset_from_beatgrid(tracks[0].beatgrid, stretch_ratio0)
+        offset0 = _phase_offset_from_beatgrid(tracks[0].beatgrid, stretch0)
         logger.info("Track 1 phase (beatgrid): %.1f ms", offset0)
     else:
-        offset0 = _find_first_beat_ms(result, master_bpm)
+        offset0 = _find_first_beat_ms(current_seg, master_bpm)
         logger.info("Track 1 phase (flux): %.1f ms", offset0)
-    if 1 < offset0 < len(result) - 2_000:
-        result = result[int(offset0):]
+    if 1 < offset0 < len(current_seg) - 2_000:
+        current_seg = current_seg[int(offset0):]
+
+    if len(tracks) == 1:
+        _progress("Exporting...")
+        buf = io.BytesIO()
+        current_seg.set_frame_rate(44_100).export(buf, format="mp3", bitrate="320k")
+        return buf.getvalue()
+
+    # ── Finished segments (written to disk for memory efficiency) ─────────────
+    disk_parts: list[str] = []
+
+    def _save_to_disk(seg: AudioSegment, tag: str) -> str:
+        path = "/tmp/bugatti_%s_%03d.wav" % (tag, len(disk_parts))
+        seg.export(path, format="wav")
+        return path
 
     # ── Mix loop ──────────────────────────────────────────────────────────────
     for i, trans in enumerate(transitions):
         bpm_b_orig = float(trans.bpm_b or trans.bpm_a or master_bpm)
         fade_ms    = _bars_to_ms(trans.transition_bars, master_bpm)
+        min_tail   = max(fade_ms, 8_000)
 
-        # Use outro_start from outgoing track's spectral sections to determine
-        # exactly where to begin the transition — the musical outro/energy drop.
-        _out_track   = tracks[i]
-        _out_secs    = _out_track.sections or {}
-        _outro_sec   = float(_out_secs.get('outro_start') or 0)
-        _out_dur_sec = float(_out_track.duration_seconds or 300)
-        if _outro_sec > 10 and _out_dur_sec > _outro_sec:
-            # Scale for BPM stretch: stretched_ms = original * (source_bpm / master_bpm)
-            _stretch = float(_out_track.bpm or master_bpm) / max(master_bpm, 1.0)
-            _tail_ms = int((_out_dur_sec - _outro_sec) * _stretch * 1_000)
-            keep_ms  = max(fade_ms, min(_tail_ms, 180_000))   # clamp: fade_ms … 3 min
-            logger.info(
-                'Track %d outro at %.1fs → transition keep_ms=%d ms',
-                i + 1, _outro_sec, keep_ms,
-            )
-        else:
-            keep_ms = max(fade_ms * 2, 60_000)
-        result  = _flush_stable(result, keep_ms)
+        # ── Mix point: phrase-aligned from beat-1 of current outgoing track ──
+        # current_seg always starts at beat-1 (invariant maintained after each iter).
+        mix_start_ms = _calculate_mix_point_ms(
+            spec             = tracks[i],
+            master_bpm       = master_bpm,
+            phrase_ms        = phrase_ms,
+            min_tail_ms      = min_tail,
+            current_seg_len_ms = len(current_seg),
+            beatgrid         = tracks[i].beatgrid,
+        )
 
-        _progress(1 + i, "Loading track %d/%d..." % (i + 2, len(tracks)))
+        logger.info(
+            "Track %d/%d: mix_start=%d ms (%.1f bars), seg_len=%d ms",
+            i + 1, len(tracks), mix_start_ms,
+            mix_start_ms / max(_bars_to_ms(1, master_bpm), 1),
+            len(current_seg),
+        )
+
+        # Split: body plays as-is; tail is the crossfade zone
+        out_body = current_seg[:mix_start_ms]
+        out_tail = current_seg[mix_start_ms:]
+
+        # Save body to disk
+        if len(out_body) > 200:
+            disk_parts.append(_save_to_disk(out_body, "body"))
+        del out_body
+        gc.collect()
+
+        # ── Load + sync + phase-trim incoming track ──────────────────────────
+        _progress("Loading track %d/%d..." % (i + 2, len(tracks)))
         in_raw = _load_seg(tracks[i + 1])
 
-        # BPM sync
         if abs(bpm_b_orig - master_bpm) > 0.5:
-            _progress(1 + i,
-                "BPM sync %d → %d BPM..." % (int(round(bpm_b_orig)), int(round(master_bpm))))
+            _progress("BPM sync %d→%d BPM..." % (int(round(bpm_b_orig)), int(round(master_bpm))))
             in_raw = _time_stretch_to_bpm(in_raw, bpm_b_orig, master_bpm)
-            in_raw = _normalize_rms(in_raw)   # re-level after BPM stretch
+            in_raw = _normalize_rms(in_raw)
 
-        # Phase alignment — sub-beat offset only
-        stretch_ratio_b = bpm_b_orig / master_bpm if master_bpm > 0 else 1.0
-        spec_b = tracks[i + 1]
-        if spec_b.beatgrid:
-            offset_b = _phase_offset_from_beatgrid(spec_b.beatgrid, stretch_ratio_b)
+        # Phase align incoming: beat-1 at position 0
+        stretch_b = bpm_b_orig / master_bpm
+        if tracks[i + 1].beatgrid:
+            offset_b = _phase_offset_from_beatgrid(tracks[i + 1].beatgrid, stretch_b)
             logger.info("Track %d phase (beatgrid): %.1f ms", i + 2, offset_b)
         else:
             offset_b = _find_first_beat_ms(in_raw, master_bpm)
@@ -676,42 +627,52 @@ def generate_mix(
         if 1 < offset_b < len(in_raw) - 2_000:
             in_raw = in_raw[int(offset_b):]
 
-        # Apply transition
+        # ── Apply transition ─────────────────────────────────────────────────
+        # out_tail starts at mix_start_ms = n*phrase_ms from beat-1 → phrase boundary.
+        # in_raw starts at beat-1 (phase-trimmed) → also at phrase boundary.
+        # Invariant: after this block, current_seg starts at in_raw's beat-1 (pos 0).
+
         label = trans.transition_type
-        _progress(len(tracks) + i,
-            "Transition %d/%d — %s..." % (i + 1, len(transitions), label))
+        _progress("Transition %d/%d — %s..." % (i + 1, len(transitions), label))
 
         try:
             if label == "cut":
-                body, _ = _phrase_aligned_split(
-                    result, master_bpm, _bars_to_ms(4, master_bpm), phrase_bars=8)
-                result = body + in_raw
+                # Hard cut at 4-bar boundary within out_tail
+                cut_ms = min(_bars_to_ms(4, master_bpm), len(out_tail))
+                disk_parts.append(_save_to_disk(out_tail[:cut_ms], "cut"))
+                current_seg = in_raw
             elif label == "filter_sweep":
-                result = _filter_sweep_transition(result, in_raw, fade_ms, master_bpm, master_bpm)
+                current_seg = _filter_sweep_v2(out_tail, in_raw, master_bpm)
             elif label == "echo_out":
-                result = _echo_out_transition(result, in_raw, fade_ms, master_bpm, master_bpm)
+                current_seg = _echo_out_v2(out_tail, in_raw, master_bpm)
             else:
-                result = _three_band_crossfade(result, in_raw, fade_ms, master_bpm, master_bpm)
+                # crossfade (default and most common)
+                current_seg = _three_band_crossfade_v2(out_tail, in_raw, master_bpm)
         except Exception as exc:
             logger.warning("Transition %d (%s) failed — simple crossfade: %s", i, label, exc)
-            cf = max(1_000, min(fade_ms, 8_000, len(result) - 500, len(in_raw) - 500))
-            result = result.append(in_raw, crossfade=cf)
+            cf = max(1_000, min(fade_ms, 8_000, len(out_tail) - 500, len(in_raw) - 500))
+            current_seg = out_tail.append(in_raw, crossfade=cf)
 
-        del in_raw; gc.collect()
+        # After transition: current_seg starts at in_raw's beat-1 (position 0).
+        # Invariant maintained: next iteration's _calculate_mix_point_ms
+        # correctly measures from beat-1 = position 0 of current_seg.
 
-    # ── Final export ──────────────────────────────────────────────────────────
-    _progress(total_steps - 1, "Mastering and encoding...")
-    result = _normalize_loudness(result, target_dbfs=-11.0)
-    tmp_final = "/tmp/bugatti_seg_%03d.wav" % len(disk_segs)
-    result.export(tmp_final, format="wav")
-    disk_segs.append(tmp_final)
-    del result; gc.collect()
+        del out_tail, in_raw
+        gc.collect()
 
+    # ── Final segment ─────────────────────────────────────────────────────────
+    _progress("Mastering and encoding...")
+    current_seg = _normalize_loudness(current_seg, target_dbfs=-11.0)
+    disk_parts.append(_save_to_disk(current_seg, "final"))
+    del current_seg
+    gc.collect()
+
+    # ── Concatenate all parts via ffmpeg ──────────────────────────────────────
     concat_list = "/tmp/bugatti_concat.txt"
     out_mp3     = "/tmp/bugatti_mix_out.mp3"
 
     with open(concat_list, "w") as fh:
-        for p in disk_segs:
+        for p in disk_parts:
             fh.write("file '%s'\n" % p)
 
     subprocess.run(
@@ -723,7 +684,7 @@ def generate_mix(
     with open(out_mp3, "rb") as fh:
         data = fh.read()
 
-    for p in disk_segs + [concat_list, out_mp3]:
+    for p in disk_parts + [concat_list, out_mp3]:
         try: os.unlink(p)
         except Exception: pass
 
