@@ -312,11 +312,26 @@ def _echo_out_transition(
 
 # ── Main engine ───────────────────────────────────────────────────────────────
 
+# Max track length to keep in memory — 7 min is plenty for a DJ set
+_MAX_TRACK_MS = 7 * 60 * 1000
+# Process at half rate to halve memory usage; upsample only at final export
+_PROC_RATE = 22_050
+
+
 def _load_seg(spec: TrackSpec) -> AudioSegment:
-    """Load one track — used for lazy per-track loading to avoid OOM."""
+    """Load one track at _PROC_RATE Hz, trimmed to _MAX_TRACK_MS.
+
+    Processing at 22 kHz instead of 44 kHz halves every audio array in RAM,
+    keeping peak memory well within Railway's 512 MB free-tier limit.
+    """
     try:
         seg = AudioSegment.from_file(spec.file_path)
-        seg = _ensure_stereo(seg).set_frame_rate(44100)
+        seg = _ensure_stereo(seg)
+        # Trim before resampling — cheaper on large files
+        if len(seg) > _MAX_TRACK_MS:
+            seg = seg[:_MAX_TRACK_MS]
+        # Downsample for processing (2x memory saving)
+        seg = seg.set_frame_rate(_PROC_RATE)
         seg = _normalize_loudness(seg)
         return seg
     except Exception as exc:
@@ -395,6 +410,8 @@ def generate_mix(
     _progress(total_steps - 1, "Mastering and encoding...")
     result = _normalize_loudness(result, target_dbfs=-11.0)
     buf = io.BytesIO()
+    # Upsample to 44100 Hz only at the very end — cheaper than carrying 44k throughout
+    result = result.set_frame_rate(44_100)
     result.export(buf, format="mp3", bitrate="320k", tags={"title": f"AI Mix — {mix_style}"})
     _progress(total_steps, "Done")
     return buf.getvalue()
