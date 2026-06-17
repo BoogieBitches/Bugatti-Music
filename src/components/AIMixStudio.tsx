@@ -112,9 +112,11 @@ function computeTransition(a: Track, b: Track, fromIdx: number, toIdx: number): 
   const score = Math.round(bpmCompat*0.40+keyCompat*0.45+(100-Math.min(100,Math.abs(eDiff)))*0.15);
   const combined = bpmCompat*0.45+keyCompat*0.55;
   let transitionType: TransitionPlan["transitionType"];
-  if (combined>=85 && Math.abs(eDiff)<=8) transitionType="cut";
-  else if (combined>=72) transitionType="crossfade";
-  else if (combined>=55) transitionType="filter_sweep";
+  // Raised from 85→96: nearly identical tracks only get a hard cut.
+  // Everything else defaults to crossfade (smooth EQ blend).
+  if (combined>=96 && Math.abs(eDiff)<=2) transitionType="cut";
+  else if (combined>=55) transitionType="crossfade";
+  else if (combined>=35) transitionType="filter_sweep";
   else transitionType="echo_out";
   const transitionBars = transitionType==="cut"?4:transitionType==="crossfade"&&bpmCompat>=85?16:32;
   const descriptions = {
