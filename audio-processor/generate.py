@@ -53,6 +53,24 @@ LOW_CUTOFF  = 200
 HIGH_CUTOFF = 4_000
 
 
+def _bpm_from_beatgrid(beatgrid: list[float] | None, fallback: float) -> float:
+    """Compute accurate BPM from beat timestamp list.
+
+    More reliable than stored metadata: uses median inter-beat interval from
+    the beatgrid (the same data Serato uses for its SYNC button). Falls back
+    to `fallback` when the beatgrid is too short to be useful.
+    """
+    if beatgrid and len(beatgrid) >= 4:
+        ibis = np.diff(np.array(beatgrid, dtype=np.float64))
+        ibis = ibis[(ibis > 0.2) & (ibis < 2.0)]  # filter out bogus values
+        if len(ibis) >= 3:
+            bpm = 60.0 / float(np.median(ibis))
+            # Sanity-check: reject values outside 60-220 BPM
+            if 60 <= bpm <= 220:
+                return bpm
+    return fallback
+
+
 @dataclass
 class TrackSpec:
     track_id:         str
@@ -272,26 +290,21 @@ def _calculate_mix_point_ms(
     phrase_ms: int,
     min_tail_ms: int,
     current_seg_len_ms: int,
-    beatgrid: list[float] | None = None,
 ) -> int:
-    """Calculate the phrase-perfect mix start position.
+    """Calculate the phrase-perfect mix start position in current_seg.
 
-    Key insight: current_seg always starts at beat-1 of the outgoing track
-    (after phase trim and transitions). So mix_start_ms is measured directly
-    from beat-1 = position 0 of current_seg.
+    Key insight: current_seg ALWAYS starts at beat-1 of the outgoing track
+    (guaranteed by phase-trim logic after every transition). Therefore phrase
+    boundaries are exactly at multiples of phrase_ms from position 0 —
+    no beat-grid walk needed, no phase-offset correction needed.
 
-    Algorithm:
-      1. Calculate outro_start in stretched time (from beat-1).
-      2. Calculate 32-bars-from-end as safety net.
-      3. Use the EARLIER of the two → avoids mixing too late.
-      4. Snap DOWN to nearest 8-bar phrase boundary.
-      5. If beatgrid available, use it for sub-bar precision.
-      6. Clamp to valid range.
+    Steps:
+      1. Find outro_start as a ratio of current_seg length.
+      2. Find 32-bars-from-end (safety: never miss the outro).
+      3. Use the EARLIER of the two.
+      4. Snap DOWN to nearest 8-bar phrase boundary (n * phrase_ms).
+      5. Clamp to valid range.
     """
-    bpm_orig = float(spec.bpm or master_bpm)
-
-    # Stretch factor: track is sped up or slowed to master_bpm
-    stretch_factor = bpm_orig / master_bpm
 
     # Use actual audio length (current_seg_len_ms) for the 32-bar rule.
     # spec.duration_seconds can be 0 or stale — don't rely on it for positioning.
@@ -322,42 +335,23 @@ def _calculate_mix_point_ms(
 
     target_ms = max(0, target_ms)
 
-    # ── Beatgrid-aware phrase snapping ─────────────────────────────────────
-    # If we have the beatgrid, find the exact phrase boundary in beat timestamps
-    # rather than using heuristic ms arithmetic.
-    mix_start_ms: int
-
-    if beatgrid and len(beatgrid) >= 2 and phrase_ms > 0:
-        beats = [b * stretch_factor for b in beatgrid]
-        beats_per_phrase = 32  # 8-bar phrase = 32 beats in 4/4
-
-        # Convert target_ms to seconds
-        target_sec = target_ms / 1000.0
-
-        # Walk through beat indices; find the last phrase-boundary beat ≤ target
-        best_beat_sec = 0.0
-        for idx in range(0, len(beats) - beats_per_phrase, beats_per_phrase):
-            if beats[idx] <= target_sec:
-                best_beat_sec = beats[idx]
-            else:
-                break
-
-        mix_start_ms = int(best_beat_sec * 1000)
-        logger.info(
-            "Mix point (beatgrid): %.1f s (target=%.1f s, outro=%.1f s, 32bars=%.1f s)",
-            best_beat_sec, target_sec, outro_sec, bars32_start / 1000.0,
-        )
+    # ── Phrase-boundary snap ────────────────────────────────────────────────
+    # Heuristic is always correct here: current_seg starts at beat-1 (invariant),
+    # so phrase boundaries are exactly at n * phrase_ms from position 0.
+    # The beatgrid walk was REMOVED — it used original-time beat positions without
+    # subtracting the phase offset already trimmed from the track start, causing
+    # a sub-beat misalignment.
+    if phrase_ms > 0 and target_ms > 0:
+        n = target_ms // phrase_ms  # floor → last phrase AT or BEFORE target
+        mix_start_ms = int(n * phrase_ms)
     else:
-        # Heuristic: snap DOWN to nearest 8-bar phrase
-        if phrase_ms > 0 and target_ms > 0:
-            n = target_ms // phrase_ms  # floor = last phrase at or before target
-            mix_start_ms = int(n * phrase_ms)
-        else:
-            mix_start_ms = target_ms
-        logger.info(
-            "Mix point (heuristic): %d ms (target=%d ms, outro=%.1f s, 32bars=%d ms)",
-            mix_start_ms, target_ms, outro_sec, bars32_start,
-        )
+        mix_start_ms = target_ms
+    logger.info(
+        "Mix point: %d ms (%.1f bars, target=%d ms, outro=%.1f s, 32bars=%d ms)",
+        mix_start_ms,
+        mix_start_ms / max(_bars_to_ms(1, master_bpm), 1),
+        target_ms, outro_sec, bars32_start,
+    )
 
     # Clamp to valid range
     max_mix_start = max(0, current_seg_len_ms - min_tail_ms)
@@ -543,22 +537,30 @@ def generate_mix(
             progress_callback(min(95, int(step_count[0] / total_steps * 100)), msg)
 
     # ── Master BPM ────────────────────────────────────────────────────────────
-    master_bpm = float(target_bpm) if target_bpm and target_bpm > 0 else float(tracks[0].bpm or 128)
+    # Use beatgrid-derived BPM for track 0 (more accurate than stored metadata,
+    # same approach as Serato SYNC). Fall back to spec.bpm if no beatgrid.
+    bpm0 = _bpm_from_beatgrid(tracks[0].beatgrid, float(tracks[0].bpm or 128))
+    master_bpm = float(target_bpm) if (target_bpm and target_bpm > 0) else bpm0
     phrase_ms  = _bars_to_ms(8, master_bpm)
 
-    logger.info("generate_mix: %d tracks, master_bpm=%.1f, style=%s", len(tracks), master_bpm, mix_style)
+    logger.info(
+        "generate_mix: %d tracks, master_bpm=%.3f (from %s), style=%s",
+        len(tracks), master_bpm,
+        "beatgrid" if tracks[0].beatgrid else "spec",
+        mix_style,
+    )
 
     # ── Load + sync + phase-trim track 0 ─────────────────────────────────────
     _progress("Loading track 1/%d..." % len(tracks))
     current_seg = _load_seg(tracks[0])
 
-    bpm0 = float(tracks[0].bpm or master_bpm)
     if abs(bpm0 - master_bpm) > 0.5:
-        _progress("BPM sync track 1: %d→%d BPM..." % (int(bpm0), int(master_bpm)))
+        _progress("BPM sync track 1: %.1f→%.1f BPM..." % (bpm0, master_bpm))
         current_seg = _time_stretch_to_bpm(current_seg, bpm0, master_bpm)
         current_seg = _normalize_rms(current_seg)
 
     # Phase align: beat-1 at t=0 ms
+    # stretch0 is the time-stretch ratio already applied; beatgrid is in original time.
     stretch0 = bpm0 / master_bpm
     if tracks[0].beatgrid:
         offset0 = _phase_offset_from_beatgrid(tracks[0].beatgrid, stretch0)
@@ -585,19 +587,27 @@ def generate_mix(
 
     # ── Mix loop ──────────────────────────────────────────────────────────────
     for i, trans in enumerate(transitions):
-        bpm_b_orig = float(trans.bpm_b or trans.bpm_a or master_bpm)
+        # Derive accurate BPM from incoming track's beatgrid (Serato SYNC approach).
+        # This eliminates ~2 BPM metadata errors that cause 200+ ms beat drift over 32 bars.
+        spec_b = tracks[i + 1]
+        bpm_b_orig = _bpm_from_beatgrid(spec_b.beatgrid, float(trans.bpm_b or trans.bpm_a or master_bpm))
+        logger.info(
+            "Track %d: bpm_b=%.3f (from %s, spec=%.1f)",
+            i + 2, bpm_b_orig,
+            "beatgrid" if spec_b.beatgrid else "spec",
+            float(trans.bpm_b or 0),
+        )
         fade_ms    = _bars_to_ms(trans.transition_bars, master_bpm)
         min_tail   = max(fade_ms, 8_000)
 
         # ── Mix point: phrase-aligned from beat-1 of current outgoing track ──
         # current_seg always starts at beat-1 (invariant maintained after each iter).
         mix_start_ms = _calculate_mix_point_ms(
-            spec             = tracks[i],
-            master_bpm       = master_bpm,
-            phrase_ms        = phrase_ms,
-            min_tail_ms      = min_tail,
+            spec               = tracks[i],
+            master_bpm         = master_bpm,
+            phrase_ms          = phrase_ms,
+            min_tail_ms        = min_tail,
             current_seg_len_ms = len(current_seg),
-            beatgrid         = tracks[i].beatgrid,
         )
 
         logger.info(
