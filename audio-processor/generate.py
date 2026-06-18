@@ -913,21 +913,35 @@ def generate_mix(
 
     # ── Final segment ─────────────────────────────────────────────────────────
     _progress("Mastering and encoding...")
-    current_seg = _normalize_loudness(current_seg, target_dbfs=-11.0)
+    # DO NOT apply per-segment normalization here — loudnorm on the full concat
+    # below handles the entire mix in one pass (EBU R128, same as Spotify/YouTube).
     disk_parts.append(_save_to_disk(current_seg, "final"))
     del current_seg
     gc.collect()
 
-    # ── Concatenate all parts via ffmpeg ──────────────────────────────────────
+    # ── Concatenate all parts via ffmpeg + EBU R128 loudnorm ──────────────────
+    # loudnorm=I=-14:TP=-1:LRA=11 targets -14 LUFS integrated, -1 dBTP true peak,
+    # 11 LU loudness range — standard streaming platform target.
+    # This single pass corrects any residual level differences between disk_parts.
     concat_list = "/tmp/bugatti_concat.txt"
+    concat_wav  = "/tmp/bugatti_concat_raw.wav"
     out_mp3     = "/tmp/bugatti_mix_out.mp3"
 
     with open(concat_list, "w") as fh:
         for p in disk_parts:
             fh.write("file '%s'\n" % p)
 
+    # Step 1: concat all WAV parts into one raw WAV (no processing yet)
     subprocess.run(
         ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
+         "-ar", "44100", "-c:a", "pcm_s16le", concat_wav],
+        check=True, capture_output=True,
+    )
+
+    # Step 2: loudnorm two-pass (linear mode for speed on CPU) + encode to MP3
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", concat_wav,
+         "-af", "loudnorm=I=-14:TP=-1:LRA=11:linear=true",
          "-ar", "44100", "-b:a", "320k", "-metadata", "title=AI Mix", out_mp3],
         check=True, capture_output=True,
     )
@@ -935,7 +949,7 @@ def generate_mix(
     with open(out_mp3, "rb") as fh:
         data = fh.read()
 
-    for p in disk_parts + [concat_list, out_mp3]:
+    for p in disk_parts + [concat_list, concat_wav, out_mp3]:
         try: os.unlink(p)
         except Exception: pass
 
