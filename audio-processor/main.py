@@ -4,6 +4,7 @@ Bugatti Sound — Audio Processor FastAPI service.
 Endpoints:
   GET  /audio/health
   POST /audio/analyze           → upload file, get BPM/key/energy + track_id for reuse
+  POST /audio/analyze-url       → same but accepts a URL instead of a file (for large tracks)
   POST /audio/generate          → submit track_ids + transitions → returns job_id
   GET  /audio/jobs/{job_id}     → poll for status / progress
   GET  /audio/jobs/{job_id}/download → stream finished MP3
@@ -17,6 +18,7 @@ import os
 import shutil
 import tempfile
 import threading
+import urllib.request
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
@@ -131,6 +133,46 @@ async def analyze(file: UploadFile = File(...)):
     track_id, ext, path = await _save_upload(file)
     try:
         loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, analyze_audio, str(path))
+        result["track_id"] = track_id
+        result["stored_ext"] = ext
+        return JSONResponse(content=result)
+    except Exception as exc:
+        path.unlink(missing_ok=True)
+        raise HTTPException(500, f"Analysis failed: {exc}") from exc
+
+
+class AnalyzeUrlRequest(BaseModel):
+    url: str
+    filename: str = "track.mp3"
+
+
+@app.post("/audio/analyze-url")
+async def analyze_from_url(req: AnalyzeUrlRequest):
+    """Analyze audio from a URL (e.g. Supabase signed URL).
+    Avoids Vercel 4.5 MB body limit — browser uploads file to Supabase,
+    then sends the URL here for analysis.
+    """
+    ext = os.path.splitext(req.filename)[1].lower() or ".mp3"
+    if ext not in ALLOWED_EXT:
+        raise HTTPException(400, f"Unsupported format: {ext}")
+
+    track_id = str(uuid.uuid4())
+    path = STORE_DIR / f"{track_id}{ext}"
+
+    try:
+        loop = asyncio.get_event_loop()
+
+        def _download() -> None:
+            opener = urllib.request.build_opener()
+            opener.addheaders = [("User-Agent", "bugatti-audio-processor/1.0")]
+            with opener.open(req.url, timeout=120) as resp:
+                data = resp.read()
+            if len(data) > MAX_SIZE_MB * 1024 * 1024:
+                raise ValueError(f"File too large (max {MAX_SIZE_MB} MB)")
+            path.write_bytes(data)
+
+        await loop.run_in_executor(None, _download)
         result = await loop.run_in_executor(None, analyze_audio, str(path))
         result["track_id"] = track_id
         result["stored_ext"] = ext
