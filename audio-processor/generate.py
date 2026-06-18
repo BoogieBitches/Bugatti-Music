@@ -1,17 +1,19 @@
 """
-DJ mix generation engine — professional edition v6.
+DJ mix generation engine — professional edition v7.
 
-Key fixes over v5:
-  - BEAT-PERFECT SYNC: Mix point split now happens UPSTREAM (before crossfade),
-    ensuring out_tail always starts at an exact 8-bar phrase boundary from beat-1.
-    v5 was splitting inside the crossfade from the tail's own 0, which drifted
-    from the actual beat grid.
-  - EARLIER MIX POINT: Uses MIN(outro_start, 32-bars-from-end) so mixing always
-    starts early enough. v5 sometimes missed the outro and started too late.
-  - CLEAN PHASE TRACKING: After every crossfade, incoming track's beat-1 is at
-    position 0 of current_seg. Mix point for the next track is always calculated
-    from beat-1 = position 0. No complex offset tracking needed.
-  - Beatgrid-aware phrase snapping for the most precise mix-start calculation.
+Key fixes over v6:
+  - LUFS LOUDNESS MATCHING: After loading track 0, its integrated LUFS is measured
+    and used as a reference target. Every subsequent track is gain-adjusted to match
+    that same perceptual loudness before mixing. EBU R128 / ITU-R BS.1770 standard
+    (same algorithm used by Spotify/YouTube) gives consistent volume across tracks.
+    Replaces per-track RMS normalisation which ignores silent sections and produces
+    audibly inconsistent levels.
+  - STRONGER BEAT SNAP: _snap_to_nearest_beat threshold raised from 60th→80th
+    percentile so only strong kick transients are considered, reducing false snaps
+    to hi-hats or ghost notes.
+  - BEAT-PERFECT SYNC (v6): Mix point split happens UPSTREAM (before crossfade).
+  - EARLIER MIX POINT (v6): MIN(outro_start, 32-bars-from-end).
+  - CLEAN PHASE TRACKING (v6): beat-1 always at t=0 ms after each transition.
 """
 
 from __future__ import annotations
@@ -46,6 +48,14 @@ try:
 except Exception:
     _HAS_LIBROSA_GEN = False
     logger.warning("librosa not available — BPM sync falls back to ffmpeg atempo")
+
+try:
+    import pyloudnorm as _pyln
+    _HAS_PYLN = True
+    logger.info("pyloudnorm available — EBU R128 LUFS loudness matching enabled")
+except Exception:
+    _HAS_PYLN = False
+    logger.warning("pyloudnorm not available — falling back to RMS loudness matching")
 
 TransitionType = Literal["cut", "crossfade", "filter_sweep", "echo_out"]
 
@@ -164,6 +174,47 @@ def _eq_hp(seg: AudioSegment, cutoff: float = LOW_CUTOFF) -> AudioSegment:
 def _normalize_rms(seg: AudioSegment, target_dbfs: float = -14.0) -> AudioSegment:
     diff = target_dbfs - seg.dBFS
     return seg.apply_gain(max(-18.0, min(diff, 18.0)))
+
+
+def _measure_lufs(seg: AudioSegment) -> float | None:
+    """Measure integrated loudness in LUFS (EBU R128 / ITU-R BS.1770).
+
+    Returns None if pyloudnorm is unavailable or measurement fails
+    (e.g. the segment is too short or completely silent).
+    """
+    if not _HAS_PYLN:
+        return None
+    try:
+        sr  = seg.frame_rate
+        arr = np.array(seg.get_array_of_samples(), dtype=np.float64) / 32768.0
+        arr = arr.reshape(-1, seg.channels)
+        meter    = _pyln.Meter(sr)
+        loudness = meter.integrated_loudness(arr)
+        if np.isinf(loudness) or np.isnan(loudness):
+            return None
+        return float(loudness)
+    except Exception as exc:
+        logger.debug("_measure_lufs failed: %s", exc)
+        return None
+
+
+def _normalize_lufs_to_target(seg: AudioSegment, target_lufs: float) -> AudioSegment:
+    """Apply gain so that the segment's integrated LUFS matches target_lufs.
+
+    Falls back to RMS normalisation when pyloudnorm is unavailable or
+    when the LUFS measurement returns None (silent / too-short segment).
+    Clamps gain adjustment to ±18 dB to avoid pathological boosts.
+    """
+    measured = _measure_lufs(seg)
+    if measured is None:
+        return _normalize_rms(seg, target_dbfs=target_lufs + 3.0)
+    gain_db = target_lufs - measured
+    gain_db = max(-18.0, min(gain_db, 18.0))
+    logger.info(
+        "LUFS norm: measured=%.1f LUFS, target=%.1f LUFS, gain=%+.1f dB",
+        measured, target_lufs, gain_db,
+    )
+    return seg.apply_gain(gain_db)
 
 
 # ── Beatmatching ──────────────────────────────────────────────────────────────
@@ -371,8 +422,8 @@ def _snap_to_nearest_beat(
     if flux.max() < 1e-8:
         return rough_ms
 
-    # Adaptive threshold: 60th percentile within the window (not global 75th)
-    threshold = np.percentile(flux, 60)
+    # 80th percentile — only strong kicks qualify; hi-hats and ghost notes ignored
+    threshold = np.percentile(flux, 80)
     peaks     = np.where(flux > threshold)[0]
     if len(peaks) == 0:
         return rough_ms
@@ -704,6 +755,15 @@ def generate_mix(
     if 1 < offset0 < len(current_seg) - 2_000:
         current_seg = current_seg[int(offset0):]
 
+    # ── Reference loudness: measure track 0 LUFS once, match all others to it ─
+    # EBU R128 gated measurement ignores silent gaps — gives true perceptual level.
+    reference_lufs = _measure_lufs(current_seg)
+    if reference_lufs is not None:
+        logger.info("Reference LUFS from track 1: %.1f LUFS", reference_lufs)
+    else:
+        reference_lufs = -16.0  # broadcast standard fallback
+        logger.info("LUFS measurement unavailable — using %.1f LUFS fallback", reference_lufs)
+
     if len(tracks) == 1:
         _progress("Exporting...")
         buf = io.BytesIO()
@@ -803,6 +863,12 @@ def generate_mix(
             logger.info("Track %d phase (flux): %.1f ms", i + 2, offset_b)
         if 1 < offset_b < len(in_raw) - 2_000:
             in_raw = in_raw[int(offset_b):]
+
+        # ── LUFS loudness match: normalize incoming to track-1 reference ─────
+        # Done AFTER BPM stretch and phase trim so the measurement reflects the
+        # actual content that will play (time-stretch slightly changes amplitude).
+        _progress("Loudness match track %d/%d..." % (i + 2, len(tracks)))
+        in_raw = _normalize_lufs_to_target(in_raw, reference_lufs)
 
         # Beat-snap beat-1 of incoming track: after trim, beat-1 should be at 0.
         # A small residual (≤20ms) can remain due to frame rounding. Snap it away.
