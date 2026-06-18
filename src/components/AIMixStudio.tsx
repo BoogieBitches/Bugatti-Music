@@ -402,26 +402,34 @@ export function AIMixStudio({
 
   // ── Analysis ──────────────────────────────────────────────────────────────
 
-  async function analyzeTrackFile(file: File): Promise<Partial<Track>> {
+  async function analyzeTrackFile(file: File, retries = 3): Promise<Partial<Track>> {
     const apiBase = AUDIO_API;
     const form = new FormData();
     form.append("file", file);
-    try {
-      const res = await fetch(`${apiBase}/audio/analyze`,{method:"POST",body:form});
-      if(!res.ok) throw new Error(`HTTP ${res.status}`);
-      const d = await res.json();
-      if(!d.track_id) throw new Error("No track_id in response");
-      return {
-        trackId:d.track_id,
-        bpm:d.bpm??null, key:d.key??null, camelot:d.camelot??null,
-        energy:d.energy??null, genre:d.genre??null, duration:d.duration??"?:??",
-        durationSeconds:d.duration_seconds, sections:d.sections,
-        beatgrid:Array.isArray(d.beatgrid) ? d.beatgrid : undefined,
-        analyzed:true, analyzing:false, error:undefined,
-      };
-    } catch(err) {
-      return {analyzed:false, analyzing:false, error:err instanceof Error ? err.message : "Analysis failed"};
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const res = await fetch(`${apiBase}/audio/analyze`,{method:"POST",body:form});
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        const d = await res.json();
+        if(!d.track_id) throw new Error("No track_id in response");
+        return {
+          trackId:d.track_id,
+          bpm:d.bpm??null, key:d.key??null, camelot:d.camelot??null,
+          energy:d.energy??null, genre:d.genre??null, duration:d.duration??"?:??",
+          durationSeconds:d.duration_seconds, sections:d.sections,
+          beatgrid:Array.isArray(d.beatgrid) ? d.beatgrid : undefined,
+          analyzed:true, analyzing:false, error:undefined,
+        };
+      } catch(err) {
+        if (attempt < retries - 1) {
+          // HF Space cold start — ждём перед повтором (10s, 20s)
+          await new Promise(r => setTimeout(r, (attempt + 1) * 10_000));
+        } else {
+          return {analyzed:false, analyzing:false, error:err instanceof Error ? err.message : "Analysis failed"};
+        }
+      }
     }
+    return {analyzed:false, analyzing:false, error:"Analysis failed"};
   }
 
   const addFiles = useCallback((files: FileList|null)=>{
@@ -437,13 +445,14 @@ export function AIMixStudio({
       });
     }
     setTracks(t=>[...t,...newTracks]);
-    newTracks.forEach((track,idx)=>{
-      setTimeout(async()=>{
+    // Анализируем последовательно чтобы не нагружать HF Space при холодном старте
+    (async () => {
+      for (const track of newTracks) {
         setTracks(t=>t.map(x=>x.id===track.id?{...x,analyzing:true}:x));
         const analysis = await analyzeTrackFile(track.file!);
         setTracks(t=>t.map(x=>x.id===track.id?{...x,...analysis}:x));
-      }, idx*200);
-    });
+      }
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
 
