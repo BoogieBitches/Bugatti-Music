@@ -153,9 +153,10 @@ function fmtBytes(b:number){return b<1024*1024?`${(b/1024).toFixed(0)} KB`:`${(b
 function scoreColor(s:number){return s>=80?"#22c55e":s>=60?"#eab308":"#ef4444";}
 function scoreLabel(s:number){return s>=80?"Perfect":s>=65?"Good":s>=50?"OK":"Hard";}
 
-// HF Space is the canonical audio processor. Override with NEXT_PUBLIC_AUDIO_API_URL in Vercel.
-const HF_SPACE_URL = "https://bugattimusic-bugatti-audio.hf.space";
-const AUDIO_API = (process.env.NEXT_PUBLIC_AUDIO_API_URL || HF_SPACE_URL).replace(/\/$/,"");
+// Аудио-прокси: клиент всегда использует относительный путь /audio/*.
+// Next.js rewrite в next.config.ts проксирует запросы на HF Space (или AUDIO_API_URL).
+// Никаких NEXT_PUBLIC_* переменных не нужно.
+const AUDIO_API = "";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -320,7 +321,7 @@ export function AIMixStudio({
   },[tracks]);
 
   function startPolling(jid: string) {
-    const apiBase = AUDIO_API||"/audio";
+    const apiBase = AUDIO_API;
     pollFailRef.current = 0;
     pollStartRef.current = Date.now();
     pollLastProgressRef.current = -1;
@@ -387,7 +388,7 @@ export function AIMixStudio({
               avgScore:snap.avgScore,
               durationMin:durMin,
               createdAt:new Date().toISOString(),
-              apiBase:AUDIO_API||"/audio",
+              apiBase:AUDIO_API,
             });
           }
         } else if(data.status==="error"){
@@ -402,7 +403,7 @@ export function AIMixStudio({
   // ── Analysis ──────────────────────────────────────────────────────────────
 
   async function analyzeTrackFile(file: File): Promise<Partial<Track>> {
-    const apiBase = AUDIO_API||"/audio";
+    const apiBase = AUDIO_API;
     const form = new FormData();
     form.append("file", file);
     try {
@@ -499,7 +500,7 @@ export function AIMixStudio({
     setGenerating(true); setGenProgress(2); setGenMessage("Submitting tracks...");
     setDone(false); setJobId(null); setGenError(null);
 
-    const apiBase = AUDIO_API||"/audio";
+    const apiBase = AUDIO_API;
     const transPlans = transitions; // computed below
 
     try {
@@ -552,7 +553,7 @@ export function AIMixStudio({
   async function handleAiPlan(){
     if(aiPlanning||tracks.length<2||!allAnalyzed) return;
     setAiPlanning(true); setAiPlan(null); setAiPlanError(null);
-    const apiBase = AUDIO_API||"/audio";
+    const apiBase = AUDIO_API;
     try{
       const payload = {
         tracks: tracks.map(t=>({
@@ -937,7 +938,7 @@ export function AIMixStudio({
       {done&&jobId&&(
         <div className="space-y-4">
           <WaveformPlayer
-            url={`${AUDIO_API||"/audio"}/audio/jobs/${jobId}/download`}
+            url={`${AUDIO_API}/audio/jobs/${jobId}/download`}
             durationMin={jobDuration}
             downloadFilename={`bugatti-mix-${jobId.slice(0,8)}.mp3`}
           />
