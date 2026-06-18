@@ -154,11 +154,9 @@ function fmtBytes(b:number){return b<1024*1024?`${(b/1024).toFixed(0)} KB`:`${(b
 function scoreColor(s:number){return s>=80?"#22c55e":s>=60?"#eab308":"#ef4444";}
 function scoreLabel(s:number){return s>=80?"Perfect":s>=65?"Good":s>=50?"OK":"Hard";}
 
-// Аудио-прокси: клиент всегда использует относительный путь /audio/*.
-// Анализ идёт через /api/analyze (Edge route на том же домене) — нет CORS, нет лимитов размера.
-// Генерация/plan/jobs — через Next.js rewrite прокси /audio/*.
-const AUDIO_API_DIRECT = "/api/analyze";
-const AUDIO_API = "";
+// Все запросы к аудио-бэкенду идут через /api/audio/* (Edge proxy на том же домене).
+// Нет CORS, нет лимитов Vercel, нет прямых запросов на HF Space из браузера.
+const AUDIO_API = "/api/audio";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -413,7 +411,7 @@ export function AIMixStudio({
       try {
         const form = new FormData();
         form.append("file", file);
-        const res = await fetch(AUDIO_API_DIRECT, {
+        const res = await fetch(`${AUDIO_API}/analyze`, {
           method: "POST", body: form, signal: controller.signal,
         });
         clearTimeout(timer);
