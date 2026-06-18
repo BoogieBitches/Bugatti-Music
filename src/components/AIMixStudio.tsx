@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { WaveformPlayer } from "./WaveformPlayer";
 import { MixHistory, saveToHistory, type MixRecord } from "./MixHistory";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -404,38 +405,39 @@ export function AIMixStudio({
   // ── Analysis ──────────────────────────────────────────────────────────────
 
   async function analyzeTrackFile(file: File, retries = 3): Promise<Partial<Track>> {
-    // Схема: браузер → Supabase Storage (нет лимитов) → URL → /api/audio/analyze-url → HF Space
-    // Это обходит лимит Vercel 4.5 MB и CORS-проблемы при прямых запросах на HF Space.
+    // Схема без лимитов Vercel:
+    //   1. Браузер → Supabase Storage (audio-previews, публичный) — нет лимитов
+    //   2. Получаем публичный URL файла
+    //   3. Отправляем URL (JSON) → /api/audio/analyze-url → HF Space скачивает сам
     for (let attempt = 0; attempt < retries; attempt++) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 120_000);
       try {
-        // Шаг 1: получаем presigned upload URL от Supabase (через наш API)
-        const presignRes = await fetch("/api/mix-upload/presign", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: file.name }),
-          signal: controller.signal,
-        });
-        if (!presignRes.ok) throw new Error(`Presign failed: HTTP ${presignRes.status}`);
-        const { uploadUrl, downloadUrl } = await presignRes.json() as { uploadUrl: string; downloadUrl: string };
+        const supabase = createSupabaseBrowserClient();
 
-        // Шаг 2: загружаем файл напрямую в Supabase (браузер → Supabase, без Vercel)
+        // Шаг 1: узнаём userId из сессии
+        const { data: { user } } = await supabase.auth.getUser();
+        const uid = user?.id ?? "anon";
+        const ext = file.name.split(".").pop()?.toLowerCase() || "mp3";
+        const path = `${uid}/mix-temp/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+        // Шаг 2: загружаем файл напрямую в Supabase из браузера (без Vercel, без лимитов)
         setTracks(t=>t.map(x=>x.file===file ? {...x, analyzeStatus:"Uploading..."} : x));
-        const uploadRes = await fetch(uploadUrl, {
-          method: "PUT",
-          body: file,
-          headers: { "Content-Type": file.type || "audio/mpeg" },
-          signal: controller.signal,
-        });
-        if (!uploadRes.ok) throw new Error(`Upload failed: HTTP ${uploadRes.status}`);
+        const { error: uploadError } = await supabase.storage
+          .from("audio-previews")
+          .upload(path, file, { upsert: true });
+        if (uploadError) throw new Error(`Upload: ${uploadError.message}`);
 
-        // Шаг 3: отправляем URL на HF Space через прокси (JSON, без лимитов)
+        // Шаг 3: публичный URL файла (bucket audio-previews публичный)
+        const { data: urlData } = supabase.storage.from("audio-previews").getPublicUrl(path);
+        const publicUrl = urlData.publicUrl;
+
+        // Шаг 4: отправляем URL на HF Space через Edge прокси (JSON ≈ 200 байт, без лимитов)
         setTracks(t=>t.map(x=>x.file===file ? {...x, analyzeStatus:"Analyzing..."} : x));
         const res = await fetch(`${AUDIO_API}/analyze-url`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: downloadUrl, filename: file.name }),
+          body: JSON.stringify({ url: publicUrl, filename: file.name }),
           signal: controller.signal,
         });
         clearTimeout(timer);
