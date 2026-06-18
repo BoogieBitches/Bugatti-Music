@@ -154,9 +154,13 @@ function fmtBytes(b:number){return b<1024*1024?`${(b/1024).toFixed(0)} KB`:`${(b
 function scoreColor(s:number){return s>=80?"#22c55e":s>=60?"#eab308":"#ef4444";}
 function scoreLabel(s:number){return s>=80?"Perfect":s>=65?"Good":s>=50?"OK":"Hard";}
 
-// Все запросы к аудио-бэкенду идут через /api/audio/* (Edge proxy на том же домене).
-// Нет CORS, нет лимитов Vercel, нет прямых запросов на HF Space из браузера.
+// JSON-запросы (generate, plan, jobs) идут через Edge proxy /api/audio/*
 const AUDIO_API = "/api/audio";
+
+// Файлы (analyze) отправляем НАПРЯМУЮ на HF Space, минуя Vercel.
+// Vercel Edge proxy режет тело запроса на 4.5 MB → 413 при треках > 4.5 MB.
+// HF Space поддерживает CORS, поэтому прямой fetch из браузера работает.
+const AUDIO_API_DIRECT = "https://bugattimusic-bugatti-audio.hf.space";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -403,7 +407,8 @@ export function AIMixStudio({
   // ── Analysis ──────────────────────────────────────────────────────────────
 
   async function analyzeTrackFile(file: File, retries = 3): Promise<Partial<Track>> {
-    // Анализ через /api/analyze (Edge route) — нет CORS, нет лимитов Vercel
+    // Файлы идут НАПРЯМУЮ на HF Space — минуем лимит Vercel 4.5 MB на прокси.
+    // AUDIO_API_DIRECT = https://bugattimusic-bugatti-audio.hf.space
     for (let attempt = 0; attempt < retries; attempt++) {
       const controller = new AbortController();
       // Таймаут 90 сек — если HF Space не ответил, не висим вечно
@@ -411,7 +416,7 @@ export function AIMixStudio({
       try {
         const form = new FormData();
         form.append("file", file);
-        const res = await fetch(`${AUDIO_API}/analyze`, {
+        const res = await fetch(`${AUDIO_API_DIRECT}/audio/analyze`, {
           method: "POST", body: form, signal: controller.signal,
         });
         clearTimeout(timer);
