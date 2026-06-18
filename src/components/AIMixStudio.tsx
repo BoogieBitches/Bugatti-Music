@@ -154,10 +154,11 @@ function fmtBytes(b:number){return b<1024*1024?`${(b/1024).toFixed(0)} KB`:`${(b
 function scoreColor(s:number){return s>=80?"#22c55e":s>=60?"#eab308":"#ef4444";}
 function scoreLabel(s:number){return s>=80?"Perfect":s>=65?"Good":s>=50?"OK":"Hard";}
 
-// Генерация/jobs/plan через Edge proxy /api/audio/* → Railway
+// Railway audio processor — прямой доступ из браузера (CORS allow_origins=*)
+const RAILWAY_URL = "https://vivacious-celebration-production-9ee8.up.railway.app";
+// Для анализа — напрямую в Railway (минуем Vercel, нет лимита 4.5 MB)
+// Для jobs/generate/plan — через Edge proxy (нужен для streaming download)
 const AUDIO_API = "/api/audio";
-// Анализ файлов — напрямую в Railway, минуя Vercel (CORS allow_origins=*, нет лимита 4.5 MB)
-const RAILWAY_DIRECT = "https://vivacious-celebration-production-9ee8.up.railway.app";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -439,7 +440,7 @@ export function AIMixStudio({
         const form = new FormData();
         form.append("file", file, file.name);
 
-        const res = await fetch(`${RAILWAY_DIRECT}/audio/analyze`, {
+        const res = await fetch(`${RAILWAY_URL}/audio/analyze`, {
           method: "POST",
           body: form,
           signal: controller.signal,
