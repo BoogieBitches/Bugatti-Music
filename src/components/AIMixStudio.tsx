@@ -153,10 +153,9 @@ function fmtBytes(b:number){return b<1024*1024?`${(b/1024).toFixed(0)} KB`:`${(b
 function scoreColor(s:number){return s>=80?"#22c55e":s>=60?"#eab308":"#ef4444";}
 function scoreLabel(s:number){return s>=80?"Perfect":s>=65?"Good":s>=50?"OK":"Hard";}
 
-// Railway URL is the public fallback so production works without extra Vercel env vars.
-// Override by setting NEXT_PUBLIC_AUDIO_API_URL if the Railway URL ever changes.
-const RAILWAY_AUDIO_URL = "https://vivacious-celebration-production-9ee8.up.railway.app";
-const AUDIO_API = (process.env.NEXT_PUBLIC_AUDIO_API_URL || RAILWAY_AUDIO_URL).replace(/\/$/,"");
+// HF Space is the canonical audio processor. Override with NEXT_PUBLIC_AUDIO_API_URL in Vercel.
+const HF_SPACE_URL = "https://bugattimusic-bugatti-audio.hf.space";
+const AUDIO_API = (process.env.NEXT_PUBLIC_AUDIO_API_URL || HF_SPACE_URL).replace(/\/$/,"");
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -279,7 +278,7 @@ export function AIMixStudio({
 
   const [tracks,setTracks] = useState<Track[]>([]);
   const [dragging,setDragging] = useState(false);
-  const [selectedStyle,setSelectedStyle] = useState<MixStyle|null>(null);
+  const [selectedStyle,setSelectedStyle] = useState<MixStyle|null>("bugatti");
   const [generating,setGenerating] = useState(false);
   const [genProgress,setGenProgress] = useState(0);
   const [genMessage,setGenMessage] = useState("");
@@ -831,53 +830,22 @@ export function AIMixStudio({
             )}
           </div>
 
-          {/* Style Grid */}
+          {/* BUGATTI MODE — only mode */}
           <div className="mb-4">
-            <h2 className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Select Mix Style</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {MIX_STYLES.map(s=>{
-                const active = selectedStyle===s.id;
-                return (
-                  <button key={s.id} onClick={()=>setSelectedStyle(s.id)}
-                    className={`group relative overflow-hidden rounded-2xl p-5 text-left transition-all duration-200 border
-                      ${active?"ring-2 ring-white/30 scale-[1.02] border-white/20":"border-white/5 hover:border-white/15 hover:scale-[1.01]"}`}
-                    style={{background:`linear-gradient(135deg,${s.from}22,${s.to}18)`}}>
-                    {/* gradient glow on active */}
-                    <span aria-hidden className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-2xl"
-                      style={{background:`linear-gradient(135deg,${s.from}15,${s.to}10)`}}/>
-                    {active&&<span aria-hidden className="absolute inset-0 rounded-2xl"
-                      style={{background:`linear-gradient(135deg,${s.from}25,${s.to}20)`,boxShadow:`0 0 30px -4px ${s.from}55`}}/>}
-                    <div className="relative">
-                      <div className="text-xs font-bold uppercase tracking-widest mb-1" style={{color:s.from}}>{s.bpm} BPM</div>
-                      <div className="font-black text-base text-white leading-tight mb-1">{s.label}</div>
-                      <div className="text-xs text-white/50 leading-snug">{s.desc}</div>
-                      {active&&<div className="mt-2 inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold text-white" style={{background:`linear-gradient(90deg,${s.from},${s.to})`}}>✓ SELECTED</div>}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* BUGATTI MODE — full-width special card */}
-            <button onClick={()=>setSelectedStyle("bugatti")}
-              className={`mt-3 w-full relative overflow-hidden rounded-2xl p-5 text-left border transition-all duration-200
-                ${selectedStyle==="bugatti"
-                  ?"ring-2 ring-[var(--accent)]/60 border-[var(--accent)]/40 scale-[1.01] shadow-[0_0_40px_-8px_rgba(122,85,255,0.5)]"
-                  :"border-[var(--accent)]/20 hover:border-[var(--accent)]/40"}`}
-              style={{background:"linear-gradient(135deg,rgba(122,85,255,0.12),rgba(184,157,255,0.08))"}}>
-              {selectedStyle==="bugatti"&&<span aria-hidden className="pointer-events-none absolute inset-0 rounded-2xl" style={{background:"linear-gradient(135deg,rgba(122,85,255,0.18),rgba(184,157,255,0.12))"}}/>}
+            <div className="w-full relative overflow-hidden rounded-2xl p-5 border border-[var(--accent)]/40 shadow-[0_0_40px_-8px_rgba(122,85,255,0.4)]"
+              style={{background:"linear-gradient(135deg,rgba(122,85,255,0.15),rgba(184,157,255,0.10))"}}>
+              <span aria-hidden className="pointer-events-none absolute inset-0 rounded-2xl" style={{background:"linear-gradient(135deg,rgba(122,85,255,0.18),rgba(184,157,255,0.12))"}}/>
               <div className="relative flex items-start gap-4">
                 <div className="text-3xl shrink-0">🏎</div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="font-black text-lg bs-text-gradient">BUGATTI MODE</span>
-                    <span className="px-2 py-0.5 rounded-full bg-[var(--accent)]/20 text-[var(--accent-2)] text-[10px] font-bold border border-[var(--accent)]/30">BEST</span>
-                    {selectedStyle==="bugatti"&&<span className="ml-auto px-2 py-0.5 rounded-full bg-[var(--accent)]/30 text-[var(--accent-2)] text-[10px] font-bold">✓ SELECTED</span>}
+                    <span className="px-2 py-0.5 rounded-full bg-[var(--accent)]/30 text-[var(--accent-2)] text-[10px] font-bold border border-[var(--accent)]/30">✓ ACTIVE</span>
                   </div>
-                  <p className="text-xs text-white/50 leading-relaxed">Advanced AI analyzes BPM, key, energy, vocals and track structure to create a professional club-ready DJ set with beatmatching, harmonic mixing, phrase matching, intelligent EQ transitions, filter sweeps and loudness balancing.</p>
+                  <p className="text-xs text-white/50 leading-relaxed">Advanced AI analyzes BPM, key, energy and track structure to create a professional DJ mix with beatmatching, harmonic mixing, phrase matching, intelligent EQ transitions and loudness balancing.</p>
                 </div>
               </div>
-            </button>
+            </div>
           </div>
 
           {/* Target BPM: Serato-style master BPM for the whole mix */}
@@ -943,9 +911,8 @@ export function AIMixStudio({
               )}
             </div>
           ):(
-            <button onClick={handleGenerate} disabled={!selectedStyle}
-              className={`w-full bs-button bs-button-primary py-5 text-lg font-black tracking-wide transition-all duration-200
-                ${!selectedStyle?"opacity-30 cursor-not-allowed":"hover:scale-[1.01]"}`}>
+            <button onClick={handleGenerate}
+              className="w-full bs-button bs-button-primary py-5 text-lg font-black tracking-wide transition-all duration-200 hover:scale-[1.01]">
               GENERATE MIX
             </button>
           )}
@@ -978,7 +945,7 @@ export function AIMixStudio({
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
               {label:"Duration",    value:`${jobDuration??rb(55,75)} min`},
-              {label:"Avg BPM",     value:`${avgBpm??rb(126,132)}`},
+              {label:"Mix BPM",     value:`${targetBpm??avgBpm??rb(126,132)}`},
               {label:"Tracks",      value:`${tracks.length}`},
               {label:"Transitions", value:`${tracks.length-1}`},
             ].map(s=>(
@@ -1008,7 +975,7 @@ export function AIMixStudio({
             </div>
           </div>
 
-          <button onClick={()=>{setTracks([]);setDone(false);setSelectedStyle(null);setPrompt("");setPromptMode(false);setJobId(null);setGenError(null);setRestoredMix(null);genSnapshotRef.current=null;}}
+          <button onClick={()=>{setTracks([]);setDone(false);setSelectedStyle("bugatti");setPrompt("");setPromptMode(false);setJobId(null);setGenError(null);setRestoredMix(null);genSnapshotRef.current=null;}}
             className="w-full bs-button py-3 text-sm font-semibold text-white/60 hover:text-white transition-colors">
             ← Create New Mix
           </button>
