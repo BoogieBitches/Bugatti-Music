@@ -154,8 +154,11 @@ function scoreColor(s:number){return s>=80?"#22c55e":s>=60?"#eab308":"#ef4444";}
 function scoreLabel(s:number){return s>=80?"Perfect":s>=65?"Good":s>=50?"OK":"Hard";}
 
 // Аудио-прокси: клиент всегда использует относительный путь /audio/*.
-// Next.js rewrite в next.config.ts проксирует запросы на HF Space (или AUDIO_API_URL).
-// Никаких NEXT_PUBLIC_* переменных не нужно.
+// Для загрузки файлов (analyze) — напрямую на HF Space, иначе Vercel режет >4.5MB.
+// Для JSON (generate, plan, jobs) — через Next.js rewrite прокси (AUDIO_API = "").
+const AUDIO_API_DIRECT =
+  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_AUDIO_API_URL?.replace(/\/$/, "")) ||
+  "https://bugattimusic-bugatti-audio.hf.space";
 const AUDIO_API = "";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -403,7 +406,8 @@ export function AIMixStudio({
   // ── Analysis ──────────────────────────────────────────────────────────────
 
   async function analyzeTrackFile(file: File, retries = 3): Promise<Partial<Track>> {
-    const apiBase = AUDIO_API;
+    // Файлы отправляем напрямую на HF Space — минуем лимит Vercel 4.5MB на прокси
+    const apiBase = AUDIO_API_DIRECT;
     const form = new FormData();
     form.append("file", file);
     for (let attempt = 0; attempt < retries; attempt++) {
