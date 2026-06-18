@@ -154,10 +154,10 @@ function fmtBytes(b:number){return b<1024*1024?`${(b/1024).toFixed(0)} KB`:`${(b
 function scoreColor(s:number){return s>=80?"#22c55e":s>=60?"#eab308":"#ef4444";}
 function scoreLabel(s:number){return s>=80?"Perfect":s>=65?"Good":s>=50?"OK":"Hard";}
 
-// Все запросы к HF Space (кроме загрузки файлов) идут через Edge proxy /api/audio/*
+// Генерация/jobs/plan — HF Space через Edge proxy
 const AUDIO_API = "/api/audio";
-// Файлы заливаем напрямую из браузера на HF Space (CORS allow_origins=["*"], без Vercel-лимита 4.5 MB)
-const HF_SPACE_URL = "https://bugattimusic-bugatti-audio.hf.space";
+// Analyze — Railway через отдельный Edge proxy (всегда тёплый, без cold start)
+const ANALYZE_API = "/api/analyze";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -278,6 +278,10 @@ export function AIMixStudio({
   const [localGenerationsUsed, setLocalGenerationsUsed] = useState(generationsUsed);
   const quotaExceeded = !hasUnlimited && localGenerationsUsed >= FREE_LIMIT;
 
+  // null = проверяем, true = готов, false = просыпается
+  const [spaceReady,setSpaceReady] = useState<boolean|null>(null);
+  const spaceReadyRef = useRef<boolean>(false);
+
   const [tracks,setTracks] = useState<Track[]>([]);
   const [dragging,setDragging] = useState(false);
   const [selectedStyle,setSelectedStyle] = useState<MixStyle|null>("bugatti");
@@ -313,6 +317,26 @@ export function AIMixStudio({
   // ── Polling ───────────────────────────────────────────────────────────────
 
   useEffect(()=>()=>{if(pollRef.current)clearInterval(pollRef.current);},[]);
+
+  // Health-check Railway при монтировании — Railway всегда тёплый, ответит быстро.
+  useEffect(()=>{
+    let cancelled = false;
+    async function checkHealth() {
+      while (!cancelled) {
+        try {
+          const res = await fetch(`${ANALYZE_API}`, {method:"GET", signal: AbortSignal.timeout(8000)});
+          if (res.ok || res.status === 405) {
+            if (!cancelled) { setSpaceReady(true); spaceReadyRef.current = true; }
+            return;
+          }
+        } catch { /* ждём */ }
+        if (!cancelled) { setSpaceReady(false); await new Promise(r => setTimeout(r, 3000)); }
+      }
+    }
+    checkHealth();
+    return () => { cancelled = true; };
+  },[]);
+
   // Auto-set target BPM from first analyzed track (only when not manually set)
   useEffect(()=>{
     const analyzed = tracks.filter(t=>t.bpm&&!t.analyzing);
@@ -403,9 +427,21 @@ export function AIMixStudio({
 
   // ── Analysis ──────────────────────────────────────────────────────────────
 
+  // Railway всегда тёплый — health-check должен пройти с первой попытки
+  async function waitForSpace(): Promise<void> {
+    if (spaceReadyRef.current) return;
+    while (true) {
+      try {
+        const res = await fetch(ANALYZE_API, {method:"GET", signal: AbortSignal.timeout(8000)});
+        if (res.ok || res.status === 405) { spaceReadyRef.current = true; setSpaceReady(true); return; }
+      } catch { /* ждём */ }
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+
   async function analyzeTrackFile(file: File, retries = 3): Promise<Partial<Track>> {
-    // Схема: браузер → FormData → напрямую HF Space (CORS allow_origins=["*"])
-    // Vercel proxy НЕ используется для файлов (лимит 4.5 MB), HF Space принимает любой размер.
+    // Схема: браузер → FormData → Edge proxy /api/analyze → Railway (всегда тёплый)
+    // Нет cold start, нет "Failed to fetch", Edge runtime поддерживает streaming body.
     for (let attempt = 0; attempt < retries; attempt++) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 180_000);
@@ -415,7 +451,7 @@ export function AIMixStudio({
         const form = new FormData();
         form.append("file", file, file.name);
 
-        const res = await fetch(`${HF_SPACE_URL}/audio/analyze`, {
+        const res = await fetch(ANALYZE_API, {
           method: "POST",
           body: form,
           signal: controller.signal,
@@ -439,7 +475,7 @@ export function AIMixStudio({
         clearTimeout(timer);
         const isTimeout = err instanceof Error && err.name === "AbortError";
         if (attempt < retries - 1) {
-          await new Promise(r => setTimeout(r, 3_000));
+          await new Promise(r => setTimeout(r, 3000));
           setTracks(t=>t.map(x=>x.file===file
             ? {...x, analyzeStatus: isTimeout ? "Timeout, retrying..." : `Retrying (${attempt+2}/${retries})...`}
             : x));
@@ -668,6 +704,14 @@ export function AIMixStudio({
           setRestoredMix({jobId:r.jobId,durationMin:r.durationMin,apiBase:r.apiBase});
           window.scrollTo({top:0,behavior:"smooth"});
         }}/>
+      )}
+
+      {/* Server warm-up banner */}
+      {spaceReady===false&&(
+        <div className="mb-4 flex items-center gap-3 px-5 py-3 rounded-xl border border-yellow-500/20 bg-yellow-500/5 text-sm text-yellow-300/80">
+          <span className="inline-block w-3 h-3 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin shrink-0"/>
+          <span>Сервер анализа просыпается после простоя — обычно 30–60 сек. Вы можете загрузить треки прямо сейчас, анализ начнётся автоматически.</span>
+        </div>
       )}
 
       {/* Upload Zone */}
