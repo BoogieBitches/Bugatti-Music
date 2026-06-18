@@ -1,7 +1,7 @@
 export const runtime = "edge";
 
 const HF_URL = (
-  process.env.AUDIO_API_URL ?? "https://vivacious-celebration-production-9ee8.up.railway.app"
+  process.env.AUDIO_API_URL ?? "https://bugattimusic-bugatti-audio.hf.space"
 ).replace(/\/$/, "");
 
 async function proxy(req: Request, path: string[]): Promise<Response> {
