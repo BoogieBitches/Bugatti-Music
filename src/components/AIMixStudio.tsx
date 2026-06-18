@@ -3,7 +3,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { WaveformPlayer } from "./WaveformPlayer";
 import { MixHistory, saveToHistory, type MixRecord } from "./MixHistory";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -155,10 +154,10 @@ function fmtBytes(b:number){return b<1024*1024?`${(b/1024).toFixed(0)} KB`:`${(b
 function scoreColor(s:number){return s>=80?"#22c55e":s>=60?"#eab308":"#ef4444";}
 function scoreLabel(s:number){return s>=80?"Perfect":s>=65?"Good":s>=50?"OK":"Hard";}
 
-// Все запросы к HF Space идут через Edge proxy /api/audio/*
-// Для файлов используем схему: браузер → Supabase Storage → URL → /api/audio/analyze-url
-// Это обходит лимит Vercel 4.5 MB без прямых запросов из браузера на HF Space.
+// Все запросы к HF Space (кроме загрузки файлов) идут через Edge proxy /api/audio/*
 const AUDIO_API = "/api/audio";
+// Файлы заливаем напрямую из браузера на HF Space (CORS allow_origins=["*"], без Vercel-лимита 4.5 MB)
+const HF_SPACE_URL = "https://bugattimusic-bugatti-audio.hf.space";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -405,43 +404,27 @@ export function AIMixStudio({
   // ── Analysis ──────────────────────────────────────────────────────────────
 
   async function analyzeTrackFile(file: File, retries = 3): Promise<Partial<Track>> {
-    // Схема без лимитов Vercel:
-    //   1. Браузер → Supabase Storage (audio-previews, публичный) — нет лимитов
-    //   2. Получаем публичный URL файла
-    //   3. Отправляем URL (JSON) → /api/audio/analyze-url → HF Space скачивает сам
+    // Схема: браузер → FormData → напрямую HF Space (CORS allow_origins=["*"])
+    // Vercel proxy НЕ используется для файлов (лимит 4.5 MB), HF Space принимает любой размер.
     for (let attempt = 0; attempt < retries; attempt++) {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 120_000);
+      const timer = setTimeout(() => controller.abort(), 180_000);
       try {
-        const supabase = createSupabaseBrowserClient();
-
-        // Шаг 1: узнаём userId из сессии
-        const { data: { user } } = await supabase.auth.getUser();
-        const uid = user?.id ?? "anon";
-        const ext = file.name.split(".").pop()?.toLowerCase() || "mp3";
-        const path = `${uid}/mix-temp/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-
-        // Шаг 2: загружаем файл напрямую в Supabase из браузера (без Vercel, без лимитов)
         setTracks(t=>t.map(x=>x.file===file ? {...x, analyzeStatus:"Uploading..."} : x));
-        const { error: uploadError } = await supabase.storage
-          .from("audio-previews")
-          .upload(path, file, { upsert: true });
-        if (uploadError) throw new Error(`Upload: ${uploadError.message}`);
 
-        // Шаг 3: публичный URL файла (bucket audio-previews публичный)
-        const { data: urlData } = supabase.storage.from("audio-previews").getPublicUrl(path);
-        const publicUrl = urlData.publicUrl;
+        const form = new FormData();
+        form.append("file", file, file.name);
 
-        // Шаг 4: отправляем URL на HF Space через Edge прокси (JSON ≈ 200 байт, без лимитов)
-        setTracks(t=>t.map(x=>x.file===file ? {...x, analyzeStatus:"Analyzing..."} : x));
-        const res = await fetch(`${AUDIO_API}/analyze-url`, {
+        const res = await fetch(`${HF_SPACE_URL}/audio/analyze`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: publicUrl, filename: file.name }),
+          body: form,
           signal: controller.signal,
         });
         clearTimeout(timer);
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        if(!res.ok) {
+          const txt = await res.text().catch(()=>"");
+          throw new Error(`HTTP ${res.status}${txt ? ": " + txt.slice(0, 120) : ""}`);
+        }
         const d = await res.json();
         if(!d.track_id) throw new Error("No track_id in response");
         return {
@@ -458,10 +441,10 @@ export function AIMixStudio({
         if (attempt < retries - 1) {
           await new Promise(r => setTimeout(r, 3_000));
           setTracks(t=>t.map(x=>x.file===file
-            ? {...x, analyzeStatus: isTimeout ? "Timeout, retrying..." : "Retrying..."}
+            ? {...x, analyzeStatus: isTimeout ? "Timeout, retrying..." : `Retrying (${attempt+2}/${retries})...`}
             : x));
         } else {
-          const msg = isTimeout ? "Timeout (120s)" : err instanceof Error ? err.message : "Analysis failed";
+          const msg = isTimeout ? "Timeout (3 min)" : err instanceof Error ? err.message : "Analysis failed";
           return {analyzed:false, analyzing:false, analyzeStatus:undefined, error:msg};
         }
       }
