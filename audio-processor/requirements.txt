@@ -5,7 +5,6 @@ numpy==1.26.4
 scipy==1.13.1
 pydub==0.25.1
 pyrubberband==0.3.0
-# librosa — ML beat tracking (pre-built wheels, installs cleanly on all platforms)
 librosa>=0.10.0
-# madmom removed — requires Cython build, breaks on Railway Python 3.12
-# It auto-activates if manually installed; code has try/except fallback
+pyloudnorm>=0.3.3
+madmom>=0.16.1
