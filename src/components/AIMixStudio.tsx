@@ -154,13 +154,10 @@ function fmtBytes(b:number){return b<1024*1024?`${(b/1024).toFixed(0)} KB`:`${(b
 function scoreColor(s:number){return s>=80?"#22c55e":s>=60?"#eab308":"#ef4444";}
 function scoreLabel(s:number){return s>=80?"Perfect":s>=65?"Good":s>=50?"OK":"Hard";}
 
-// JSON-запросы (generate, plan, jobs) идут через Edge proxy /api/audio/*
+// Все запросы к HF Space идут через Edge proxy /api/audio/*
+// Для файлов используем схему: браузер → Supabase Storage → URL → /api/audio/analyze-url
+// Это обходит лимит Vercel 4.5 MB без прямых запросов из браузера на HF Space.
 const AUDIO_API = "/api/audio";
-
-// Файлы (analyze) отправляем НАПРЯМУЮ на HF Space, минуя Vercel.
-// Vercel Edge proxy режет тело запроса на 4.5 MB → 413 при треках > 4.5 MB.
-// HF Space поддерживает CORS, поэтому прямой fetch из браузера работает.
-const AUDIO_API_DIRECT = "https://bugattimusic-bugatti-audio.hf.space";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -407,17 +404,39 @@ export function AIMixStudio({
   // ── Analysis ──────────────────────────────────────────────────────────────
 
   async function analyzeTrackFile(file: File, retries = 3): Promise<Partial<Track>> {
-    // Файлы идут НАПРЯМУЮ на HF Space — минуем лимит Vercel 4.5 MB на прокси.
-    // AUDIO_API_DIRECT = https://bugattimusic-bugatti-audio.hf.space
+    // Схема: браузер → Supabase Storage (нет лимитов) → URL → /api/audio/analyze-url → HF Space
+    // Это обходит лимит Vercel 4.5 MB и CORS-проблемы при прямых запросах на HF Space.
     for (let attempt = 0; attempt < retries; attempt++) {
       const controller = new AbortController();
-      // Таймаут 90 сек — если HF Space не ответил, не висим вечно
-      const timer = setTimeout(() => controller.abort(), 90_000);
+      const timer = setTimeout(() => controller.abort(), 120_000);
       try {
-        const form = new FormData();
-        form.append("file", file);
-        const res = await fetch(`${AUDIO_API_DIRECT}/audio/analyze`, {
-          method: "POST", body: form, signal: controller.signal,
+        // Шаг 1: получаем presigned upload URL от Supabase (через наш API)
+        const presignRes = await fetch("/api/mix-upload/presign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: file.name }),
+          signal: controller.signal,
+        });
+        if (!presignRes.ok) throw new Error(`Presign failed: HTTP ${presignRes.status}`);
+        const { uploadUrl, downloadUrl } = await presignRes.json() as { uploadUrl: string; downloadUrl: string };
+
+        // Шаг 2: загружаем файл напрямую в Supabase (браузер → Supabase, без Vercel)
+        setTracks(t=>t.map(x=>x.file===file ? {...x, analyzeStatus:"Uploading..."} : x));
+        const uploadRes = await fetch(uploadUrl, {
+          method: "PUT",
+          body: file,
+          headers: { "Content-Type": file.type || "audio/mpeg" },
+          signal: controller.signal,
+        });
+        if (!uploadRes.ok) throw new Error(`Upload failed: HTTP ${uploadRes.status}`);
+
+        // Шаг 3: отправляем URL на HF Space через прокси (JSON, без лимитов)
+        setTracks(t=>t.map(x=>x.file===file ? {...x, analyzeStatus:"Analyzing..."} : x));
+        const res = await fetch(`${AUDIO_API}/analyze-url`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: downloadUrl, filename: file.name }),
+          signal: controller.signal,
         });
         clearTimeout(timer);
         if(!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -435,14 +454,12 @@ export function AIMixStudio({
         clearTimeout(timer);
         const isTimeout = err instanceof Error && err.name === "AbortError";
         if (attempt < retries - 1) {
-          // При таймауте или ошибке — небольшая пауза и повтор
           await new Promise(r => setTimeout(r, 3_000));
-          // Показываем статус retry в UI
           setTracks(t=>t.map(x=>x.file===file
             ? {...x, analyzeStatus: isTimeout ? "Timeout, retrying..." : "Retrying..."}
             : x));
         } else {
-          const msg = isTimeout ? "Timeout (90s)" : err instanceof Error ? err.message : "Analysis failed";
+          const msg = isTimeout ? "Timeout (120s)" : err instanceof Error ? err.message : "Analysis failed";
           return {analyzed:false, analyzing:false, analyzeStatus:undefined, error:msg};
         }
       }
