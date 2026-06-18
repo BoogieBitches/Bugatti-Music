@@ -156,8 +156,10 @@ function scoreLabel(s:number){return s>=80?"Perfect":s>=65?"Good":s>=50?"OK":"Ha
 
 // Генерация/jobs/plan — HF Space через Edge proxy
 const AUDIO_API = "/api/audio";
-// Analyze — Railway через отдельный Edge proxy (всегда тёплый, без cold start)
+// Health-check через Edge proxy (GET, без payload)
 const ANALYZE_API = "/api/analyze";
+// Файлы — напрямую в Railway (CORS allow_origins=*, без лимита 4.5 MB Vercel)
+const RAILWAY_ANALYZE = "https://vivacious-celebration-production-9ee8.up.railway.app/audio/analyze";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -440,8 +442,8 @@ export function AIMixStudio({
   }
 
   async function analyzeTrackFile(file: File, retries = 3): Promise<Partial<Track>> {
-    // Схема: браузер → FormData → Edge proxy /api/analyze → Railway (всегда тёплый)
-    // Нет cold start, нет "Failed to fetch", Edge runtime поддерживает streaming body.
+    // Схема: браузер → FormData → напрямую Railway (CORS allow_origins=*)
+    // Обходим Vercel 4.5 MB лимит — файлы любого размера проходят.
     for (let attempt = 0; attempt < retries; attempt++) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 180_000);
@@ -451,7 +453,7 @@ export function AIMixStudio({
         const form = new FormData();
         form.append("file", file, file.name);
 
-        const res = await fetch(ANALYZE_API, {
+        const res = await fetch(RAILWAY_ANALYZE, {
           method: "POST",
           body: form,
           signal: controller.signal,
