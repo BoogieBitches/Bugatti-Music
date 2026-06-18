@@ -155,11 +155,9 @@ function scoreColor(s:number){return s>=80?"#22c55e":s>=60?"#eab308":"#ef4444";}
 function scoreLabel(s:number){return s>=80?"Perfect":s>=65?"Good":s>=50?"OK":"Hard";}
 
 // Аудио-прокси: клиент всегда использует относительный путь /audio/*.
-// Для загрузки файлов (analyze) — напрямую на HF Space, иначе Vercel режет >4.5MB.
-// Для JSON (generate, plan, jobs) — через Next.js rewrite прокси (AUDIO_API = "").
-const AUDIO_API_DIRECT =
-  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_AUDIO_API_URL?.replace(/\/$/, "")) ||
-  "https://bugattimusic-bugatti-audio.hf.space";
+// Анализ идёт через /api/analyze (Edge route на том же домене) — нет CORS, нет лимитов размера.
+// Генерация/plan/jobs — через Next.js rewrite прокси /audio/*.
+const AUDIO_API_DIRECT = "/api/analyze";
 const AUDIO_API = "";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -407,8 +405,7 @@ export function AIMixStudio({
   // ── Analysis ──────────────────────────────────────────────────────────────
 
   async function analyzeTrackFile(file: File, retries = 3): Promise<Partial<Track>> {
-    // Файлы отправляем напрямую на HF Space — минуем лимит Vercel 4.5MB на прокси
-    const apiBase = AUDIO_API_DIRECT;
+    // Анализ через /api/analyze (Edge route) — нет CORS, нет лимитов Vercel
     for (let attempt = 0; attempt < retries; attempt++) {
       const controller = new AbortController();
       // Таймаут 90 сек — если HF Space не ответил, не висим вечно
@@ -416,7 +413,7 @@ export function AIMixStudio({
       try {
         const form = new FormData();
         form.append("file", file);
-        const res = await fetch(`${apiBase}/audio/analyze`, {
+        const res = await fetch(AUDIO_API_DIRECT, {
           method: "POST", body: form, signal: controller.signal,
         });
         clearTimeout(timer);
