@@ -154,9 +154,10 @@ function fmtBytes(b:number){return b<1024*1024?`${(b/1024).toFixed(0)} KB`:`${(b
 function scoreColor(s:number){return s>=80?"#22c55e":s>=60?"#eab308":"#ef4444";}
 function scoreLabel(s:number){return s>=80?"Perfect":s>=65?"Good":s>=50?"OK":"Hard";}
 
-// Все запросы через Edge proxy /api/audio/* → Railway
-// Файлы идут через Supabase Storage — нет лимита Vercel 4.5 MB
+// Генерация/jobs/plan через Edge proxy /api/audio/* → Railway
 const AUDIO_API = "/api/audio";
+// Анализ файлов — напрямую в Railway, минуя Vercel (CORS allow_origins=*, нет лимита 4.5 MB)
+const RAILWAY_DIRECT = "https://vivacious-celebration-production-9ee8.up.railway.app";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -427,42 +428,27 @@ export function AIMixStudio({
   // ── Analysis ──────────────────────────────────────────────────────────────
 
   async function analyzeTrackFile(file: File, retries = 3): Promise<Partial<Track>> {
-    // Схема: браузер → Supabase Storage (нет лимитов) → URL → /api/audio/analyze-url → Railway
-    // Обходит лимит Vercel 4.5 MB: файл идёт напрямую браузер→Supabase, Railway скачивает по URL.
+    // Схема: браузер → FormData → напрямую Railway (CORS allow_origins=*)
+    // Минуем Vercel полностью — нет лимита 4.5 MB, нет 413, нет cold start.
     for (let attempt = 0; attempt < retries; attempt++) {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 120_000);
+      const timer = setTimeout(() => controller.abort(), 180_000);
       try {
-        // Шаг 1: получаем presigned upload URL от Supabase (через наш API)
-        const presignRes = await fetch("/api/mix-upload/presign", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: file.name }),
-          signal: controller.signal,
-        });
-        if (!presignRes.ok) throw new Error(`Presign failed: HTTP ${presignRes.status}`);
-        const { uploadUrl, downloadUrl } = await presignRes.json() as { uploadUrl: string; downloadUrl: string };
-
-        // Шаг 2: загружаем файл напрямую в Supabase (браузер → Supabase, без Vercel)
         setTracks(t=>t.map(x=>x.file===file ? {...x, analyzeStatus:"Uploading..."} : x));
-        const uploadRes = await fetch(uploadUrl, {
-          method: "PUT",
-          body: file,
-          headers: { "Content-Type": file.type || "audio/mpeg" },
-          signal: controller.signal,
-        });
-        if (!uploadRes.ok) throw new Error(`Upload failed: HTTP ${uploadRes.status}`);
 
-        // Шаг 3: отправляем URL на Railway через прокси (JSON, без лимитов размера)
-        setTracks(t=>t.map(x=>x.file===file ? {...x, analyzeStatus:"Analyzing..."} : x));
-        const res = await fetch(`${AUDIO_API}/analyze-url`, {
+        const form = new FormData();
+        form.append("file", file, file.name);
+
+        const res = await fetch(`${RAILWAY_DIRECT}/audio/analyze`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: downloadUrl, filename: file.name }),
+          body: form,
           signal: controller.signal,
         });
         clearTimeout(timer);
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        if(!res.ok) {
+          const txt = await res.text().catch(()=>"");
+          throw new Error(`HTTP ${res.status}${txt ? ": " + txt.slice(0, 120) : ""}`);
+        }
         const d = await res.json();
         if(!d.track_id) throw new Error("No track_id in response");
         return {
@@ -479,10 +465,10 @@ export function AIMixStudio({
         if (attempt < retries - 1) {
           await new Promise(r => setTimeout(r, 3_000));
           setTracks(t=>t.map(x=>x.file===file
-            ? {...x, analyzeStatus: isTimeout ? "Timeout, retrying..." : "Retrying..."}
+            ? {...x, analyzeStatus: isTimeout ? "Timeout, retrying..." : `Retrying (${attempt+2}/${retries})...`}
             : x));
         } else {
-          const msg = isTimeout ? "Timeout (120s)" : err instanceof Error ? err.message : "Analysis failed";
+          const msg = isTimeout ? "Timeout (3 min)" : err instanceof Error ? err.message : "Analysis failed";
           return {analyzed:false, analyzing:false, analyzeStatus:undefined, error:msg};
         }
       }
