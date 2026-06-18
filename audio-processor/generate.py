@@ -299,6 +299,109 @@ def _find_first_beat_ms(seg: AudioSegment, bpm: float) -> float:
     return float(peaks[0] * 10)
 
 
+# ── Beat-snap (Serato Quantize equivalent) ────────────────────────────────────
+
+def _snap_to_nearest_beat(
+    seg: AudioSegment,
+    rough_ms: int,
+    bpm: float,
+    search_bars: float = 1.0,
+) -> int:
+    """Micro-correct a mix point by snapping to the nearest actual beat.
+
+    WHY THIS IS NEEDED:
+    Even a 0.5 BPM measurement error accumulates to ~300 ms drift over 32 bars
+    (0.5 BPM at 128 BPM ≈ 1.9ms/beat × 128 beats = 244ms). The theoretical mix
+    point (n × phrase_ms) is therefore almost always slightly off.
+
+    This function finds the nearest kick-band spectral-flux peak within ±1 bar
+    of the theoretical position and snaps to it — correcting up to ±2000ms of
+    accumulated drift while never moving more than one bar (prevents gross jumps).
+
+    Algorithm:
+      1. Extract a window of ±search_bars around rough_ms.
+      2. Band-pass filter to kick range (50–200 Hz).
+      3. Compute onset strength (spectral flux).
+      4. Find all peaks above 60th percentile (actual beats).
+      5. Return the peak closest to rough_ms (in absolute ms from seg start).
+      6. If no reliable peak is found, return rough_ms unchanged.
+    """
+    beat_ms   = 60_000.0 / max(bpm, 40)
+    bar_ms    = beat_ms * 4
+    window_ms = int(bar_ms * search_bars)
+
+    # Extract window; keep a bit extra so filters have valid edges
+    pad        = 200
+    start_ms   = max(0, rough_ms - window_ms - pad)
+    end_ms     = min(len(seg), rough_ms + window_ms + pad)
+    window_seg = seg[start_ms:end_ms]
+    if len(window_seg) < 512:
+        return rough_ms
+
+    arr = np.array(window_seg.get_array_of_samples(), dtype=np.float32) / 32768.0
+    sr  = window_seg.frame_rate
+    if window_seg.channels == 2:
+        arr = (arr[0::2] + arr[1::2]) * 0.5
+
+    # Kick-band bandpass 50–200 Hz
+    nyq = sr / 2.0
+    lo  = float(np.clip(50.0  / nyq, 1e-4, 1.0 - 1e-4))
+    hi  = float(np.clip(200.0 / nyq, 1e-4, 1.0 - 1e-4))
+    try:
+        b, a  = sp.butter(4, [lo, hi], btype="band")
+        kick  = sp.filtfilt(b, a, arr).astype(np.float32)
+    except Exception:
+        kick = arr
+
+    hop     = max(1, int(sr * 0.005))   # 5 ms resolution (was 10 ms)
+    n_fft   = 512
+    win_fn  = np.hanning(n_fft)
+    n_fr    = max(1, (len(kick) - n_fft) // hop + 1)
+    prev_m  = np.zeros(n_fft // 2 + 1, dtype=np.float32)
+    flux    = np.zeros(n_fr, dtype=np.float32)
+    for j in range(n_fr):
+        frame   = kick[j * hop : j * hop + n_fft]
+        if len(frame) < n_fft:
+            frame = np.pad(frame, (0, n_fft - len(frame)))
+        mag     = np.abs(np.fft.rfft(frame * win_fn)).astype(np.float32)
+        flux[j] = float(np.sum(np.maximum(mag - prev_m, 0.0)))
+        prev_m  = mag
+
+    flux = _ndi.uniform_filter1d(flux, size=3)
+    if flux.max() < 1e-8:
+        return rough_ms
+
+    # Adaptive threshold: 60th percentile within the window (not global 75th)
+    threshold = np.percentile(flux, 60)
+    peaks     = np.where(flux > threshold)[0]
+    if len(peaks) == 0:
+        return rough_ms
+
+    # Convert frame indices → absolute ms from seg start
+    ms_per_frame   = (hop / sr) * 1_000.0
+    peak_ms_abs    = (peaks * ms_per_frame + start_ms).astype(np.float64)
+
+    # Filter to those inside the ±window_ms search zone (exclude pad edges)
+    lo_bound = rough_ms - window_ms
+    hi_bound = rough_ms + window_ms
+    inside   = peak_ms_abs[(peak_ms_abs >= lo_bound) & (peak_ms_abs <= hi_bound)]
+    if len(inside) == 0:
+        return rough_ms
+
+    # Snap to the closest peak to rough_ms
+    best_ms = int(round(inside[np.argmin(np.abs(inside - rough_ms))]))
+
+    # Safety: never move more than half a bar (avoid snapping to wrong beat)
+    if abs(best_ms - rough_ms) > bar_ms / 2:
+        return rough_ms
+
+    logger.info(
+        "_snap_to_nearest_beat: rough=%d ms → snapped=%d ms (Δ%+d ms, bpm=%.1f)",
+        rough_ms, best_ms, best_ms - rough_ms, bpm,
+    )
+    return best_ms
+
+
 # ── Mix point calculation (the core v6 fix) ───────────────────────────────────
 
 def _calculate_mix_point_ms(
@@ -640,6 +743,13 @@ def generate_mix(
             current_seg_len_ms = len(current_seg),
         )
 
+        # ── Beat-snap: correct accumulated BPM drift at the mix point ───────
+        # n*phrase_ms is the THEORETICAL position. Even a 0.5 BPM error
+        # accumulates to ~300 ms over 32 bars. Snap to the nearest actual
+        # kick detected within ±1 bar — same as Serato Quantize.
+        if mix_start_ms > 0:
+            mix_start_ms = _snap_to_nearest_beat(current_seg, mix_start_ms, master_bpm, search_bars=1.0)
+
         logger.info(
             "Track %d/%d: mix_start=%d ms (%.1f bars), seg_len=%d ms",
             i + 1, len(tracks), mix_start_ms,
@@ -693,6 +803,14 @@ def generate_mix(
             logger.info("Track %d phase (flux): %.1f ms", i + 2, offset_b)
         if 1 < offset_b < len(in_raw) - 2_000:
             in_raw = in_raw[int(offset_b):]
+
+        # Beat-snap beat-1 of incoming track: after trim, beat-1 should be at 0.
+        # A small residual (≤20ms) can remain due to frame rounding. Snap it away.
+        # Only search within ±half-beat so we don't eat into the actual content.
+        snap_offset = _snap_to_nearest_beat(in_raw, 0, master_bpm, search_bars=0.25)
+        if snap_offset > 1:
+            in_raw = in_raw[snap_offset:]
+            logger.info("Track %d beat-1 snap: trimmed extra %d ms", i + 2, snap_offset)
 
         # ── Apply transition ─────────────────────────────────────────────────
         # out_tail starts at mix_start_ms = n*phrase_ms from beat-1 → phrase boundary.
