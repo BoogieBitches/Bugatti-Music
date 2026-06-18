@@ -853,10 +853,14 @@ def generate_mix(
             in_raw = _time_stretch_to_bpm(in_raw, bpm_b_orig, master_bpm)
             in_raw = _normalize_rms(in_raw)
 
-        # Phase align incoming: beat-1 at position 0
-        stretch_b = bpm_b_orig / master_bpm
+        # Phase align incoming: beat-1 at position 0.
+        # stretch_b = ratio ACTUALLY applied (1.0 when no stretch was needed).
+        stretch_b = master_bpm / bpm_b_orig if abs(bpm_b_orig - master_bpm) > 0.5 else 1.0
+        # Phase offset in stretched time = original_timestamp / stretch_ratio
+        # = original_timestamp * (bpm_b_orig / master_bpm)
+        stretch_factor = bpm_b_orig / master_bpm  # < 1 when sped up, > 1 when slowed
         if tracks[i + 1].beatgrid:
-            offset_b = _phase_offset_from_beatgrid(tracks[i + 1].beatgrid, stretch_b)
+            offset_b = _phase_offset_from_beatgrid(tracks[i + 1].beatgrid, stretch_factor)
             logger.info("Track %d phase (beatgrid): %.1f ms", i + 2, offset_b)
         else:
             offset_b = _find_first_beat_ms(in_raw, master_bpm)
@@ -870,13 +874,9 @@ def generate_mix(
         _progress("Loudness match track %d/%d..." % (i + 2, len(tracks)))
         in_raw = _normalize_lufs_to_target(in_raw, reference_lufs)
 
-        # Beat-snap beat-1 of incoming track: after trim, beat-1 should be at 0.
-        # A small residual (≤20ms) can remain due to frame rounding. Snap it away.
-        # Only search within ±half-beat so we don't eat into the actual content.
-        snap_offset = _snap_to_nearest_beat(in_raw, 0, master_bpm, search_bars=0.25)
-        if snap_offset > 1:
-            in_raw = in_raw[snap_offset:]
-            logger.info("Track %d beat-1 snap: trimmed extra %d ms", i + 2, snap_offset)
+        # NOTE: No secondary beat-snap here — after phase trim beat-1 is already
+        # at position 0. A second snap with a wide window (0.25 bars = 468 ms)
+        # would find a kick AFTER beat-1 and eat the downbeat, breaking alignment.
 
         # ── Apply transition ─────────────────────────────────────────────────
         # out_tail starts at mix_start_ms = n*phrase_ms from beat-1 → phrase boundary.
