@@ -24,6 +24,7 @@ interface Track {
   beatgrid?: number[];
   analyzed: boolean;
   analyzing: boolean;
+  analyzeStatus?: string;
   error?: string;
 }
 
@@ -408,11 +409,17 @@ export function AIMixStudio({
   async function analyzeTrackFile(file: File, retries = 3): Promise<Partial<Track>> {
     // Файлы отправляем напрямую на HF Space — минуем лимит Vercel 4.5MB на прокси
     const apiBase = AUDIO_API_DIRECT;
-    const form = new FormData();
-    form.append("file", file);
     for (let attempt = 0; attempt < retries; attempt++) {
+      const controller = new AbortController();
+      // Таймаут 90 сек — если HF Space не ответил, не висим вечно
+      const timer = setTimeout(() => controller.abort(), 90_000);
       try {
-        const res = await fetch(`${apiBase}/audio/analyze`,{method:"POST",body:form});
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch(`${apiBase}/audio/analyze`, {
+          method: "POST", body: form, signal: controller.signal,
+        });
+        clearTimeout(timer);
         if(!res.ok) throw new Error(`HTTP ${res.status}`);
         const d = await res.json();
         if(!d.track_id) throw new Error("No track_id in response");
@@ -422,14 +429,21 @@ export function AIMixStudio({
           energy:d.energy??null, genre:d.genre??null, duration:d.duration??"?:??",
           durationSeconds:d.duration_seconds, sections:d.sections,
           beatgrid:Array.isArray(d.beatgrid) ? d.beatgrid : undefined,
-          analyzed:true, analyzing:false, error:undefined,
+          analyzed:true, analyzing:false, analyzeStatus:undefined, error:undefined,
         };
       } catch(err) {
+        clearTimeout(timer);
+        const isTimeout = err instanceof Error && err.name === "AbortError";
         if (attempt < retries - 1) {
-          // HF Space cold start — ждём перед повтором (10s, 20s)
-          await new Promise(r => setTimeout(r, (attempt + 1) * 10_000));
+          // При таймауте или ошибке — небольшая пауза и повтор
+          await new Promise(r => setTimeout(r, 3_000));
+          // Показываем статус retry в UI
+          setTracks(t=>t.map(x=>x.file===file
+            ? {...x, analyzeStatus: isTimeout ? "Timeout, retrying..." : "Retrying..."}
+            : x));
         } else {
-          return {analyzed:false, analyzing:false, error:err instanceof Error ? err.message : "Analysis failed"};
+          const msg = isTimeout ? "Timeout (90s)" : err instanceof Error ? err.message : "Analysis failed";
+          return {analyzed:false, analyzing:false, analyzeStatus:undefined, error:msg};
         }
       }
     }
@@ -449,14 +463,13 @@ export function AIMixStudio({
       });
     }
     setTracks(t=>[...t,...newTracks]);
-    // Анализируем последовательно чтобы не нагружать HF Space при холодном старте
-    (async () => {
-      for (const track of newTracks) {
-        setTracks(t=>t.map(x=>x.id===track.id?{...x,analyzing:true}:x));
-        const analysis = await analyzeTrackFile(track.file!);
+    // Параллельный анализ — быстро когда HF Space уже тёплый
+    newTracks.forEach(track => {
+      setTracks(t=>t.map(x=>x.id===track.id?{...x,analyzing:true}:x));
+      analyzeTrackFile(track.file!).then(analysis => {
         setTracks(t=>t.map(x=>x.id===track.id?{...x,...analysis}:x));
-      }
-    })();
+      });
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
 
@@ -746,7 +759,7 @@ export function AIMixStudio({
                     )}
                   </div>
                 ):(
-                  <div className="text-xs text-white/25 italic">{track.analyzing?"Analyzing...":"Queued"}</div>
+                  <div className="text-xs text-white/25 italic">{track.analyzeStatus||"Analyzing..."}</div>
                 )}
                 <button onClick={()=>removeTrack(track.id)}
                   className="w-6 h-6 flex items-center justify-center text-white/20 hover:text-red-400 transition-colors text-lg shrink-0">×</button>
