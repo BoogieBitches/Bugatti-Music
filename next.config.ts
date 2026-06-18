@@ -49,16 +49,6 @@ const nextConfig: NextConfig = {
     ],
   },
 
-  // Проксирует /audio/* → HF Space (или AUDIO_API_URL).
-  // Клиент всегда обращается к /audio/..., не зная реального URL бэкенда.
-  async rewrites() {
-    return [
-      {
-        source: "/audio/:path*",
-        destination: `${AUDIO_API_URL}/audio/:path*`,
-      },
-    ];
-  },
 };
 
 export default nextConfig;
