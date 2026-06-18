@@ -154,12 +154,9 @@ function fmtBytes(b:number){return b<1024*1024?`${(b/1024).toFixed(0)} KB`:`${(b
 function scoreColor(s:number){return s>=80?"#22c55e":s>=60?"#eab308":"#ef4444";}
 function scoreLabel(s:number){return s>=80?"Perfect":s>=65?"Good":s>=50?"OK":"Hard";}
 
-// Генерация/jobs/plan — HF Space через Edge proxy
+// Все запросы через Edge proxy /api/audio/* → Railway
+// Файлы идут через Supabase Storage — нет лимита Vercel 4.5 MB
 const AUDIO_API = "/api/audio";
-// Health-check через Edge proxy (GET, без payload)
-const ANALYZE_API = "/api/analyze";
-// Файлы — напрямую в Railway (CORS allow_origins=*, без лимита 4.5 MB Vercel)
-const RAILWAY_ANALYZE = "https://vivacious-celebration-production-9ee8.up.railway.app/audio/analyze";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -320,14 +317,14 @@ export function AIMixStudio({
 
   useEffect(()=>()=>{if(pollRef.current)clearInterval(pollRef.current);},[]);
 
-  // Health-check Railway при монтировании — Railway всегда тёплый, ответит быстро.
+  // Health-check Railway через Edge proxy при монтировании.
   useEffect(()=>{
     let cancelled = false;
     async function checkHealth() {
       while (!cancelled) {
         try {
-          const res = await fetch(`${ANALYZE_API}`, {method:"GET", signal: AbortSignal.timeout(8000)});
-          if (res.ok || res.status === 405) {
+          const res = await fetch(`${AUDIO_API}/health`, {signal: AbortSignal.timeout(8000)});
+          if (res.ok) {
             if (!cancelled) { setSpaceReady(true); spaceReadyRef.current = true; }
             return;
           }
@@ -429,40 +426,43 @@ export function AIMixStudio({
 
   // ── Analysis ──────────────────────────────────────────────────────────────
 
-  // Railway всегда тёплый — health-check должен пройти с первой попытки
-  async function waitForSpace(): Promise<void> {
-    if (spaceReadyRef.current) return;
-    while (true) {
-      try {
-        const res = await fetch(ANALYZE_API, {method:"GET", signal: AbortSignal.timeout(8000)});
-        if (res.ok || res.status === 405) { spaceReadyRef.current = true; setSpaceReady(true); return; }
-      } catch { /* ждём */ }
-      await new Promise(r => setTimeout(r, 3000));
-    }
-  }
-
   async function analyzeTrackFile(file: File, retries = 3): Promise<Partial<Track>> {
-    // Схема: браузер → FormData → напрямую Railway (CORS allow_origins=*)
-    // Обходим Vercel 4.5 MB лимит — файлы любого размера проходят.
+    // Схема: браузер → Supabase Storage (нет лимитов) → URL → /api/audio/analyze-url → Railway
+    // Обходит лимит Vercel 4.5 MB: файл идёт напрямую браузер→Supabase, Railway скачивает по URL.
     for (let attempt = 0; attempt < retries; attempt++) {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 180_000);
+      const timer = setTimeout(() => controller.abort(), 120_000);
       try {
-        setTracks(t=>t.map(x=>x.file===file ? {...x, analyzeStatus:"Uploading..."} : x));
-
-        const form = new FormData();
-        form.append("file", file, file.name);
-
-        const res = await fetch(RAILWAY_ANALYZE, {
+        // Шаг 1: получаем presigned upload URL от Supabase (через наш API)
+        const presignRes = await fetch("/api/mix-upload/presign", {
           method: "POST",
-          body: form,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: file.name }),
+          signal: controller.signal,
+        });
+        if (!presignRes.ok) throw new Error(`Presign failed: HTTP ${presignRes.status}`);
+        const { uploadUrl, downloadUrl } = await presignRes.json() as { uploadUrl: string; downloadUrl: string };
+
+        // Шаг 2: загружаем файл напрямую в Supabase (браузер → Supabase, без Vercel)
+        setTracks(t=>t.map(x=>x.file===file ? {...x, analyzeStatus:"Uploading..."} : x));
+        const uploadRes = await fetch(uploadUrl, {
+          method: "PUT",
+          body: file,
+          headers: { "Content-Type": file.type || "audio/mpeg" },
+          signal: controller.signal,
+        });
+        if (!uploadRes.ok) throw new Error(`Upload failed: HTTP ${uploadRes.status}`);
+
+        // Шаг 3: отправляем URL на Railway через прокси (JSON, без лимитов размера)
+        setTracks(t=>t.map(x=>x.file===file ? {...x, analyzeStatus:"Analyzing..."} : x));
+        const res = await fetch(`${AUDIO_API}/analyze-url`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: downloadUrl, filename: file.name }),
           signal: controller.signal,
         });
         clearTimeout(timer);
-        if(!res.ok) {
-          const txt = await res.text().catch(()=>"");
-          throw new Error(`HTTP ${res.status}${txt ? ": " + txt.slice(0, 120) : ""}`);
-        }
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
         const d = await res.json();
         if(!d.track_id) throw new Error("No track_id in response");
         return {
@@ -477,12 +477,12 @@ export function AIMixStudio({
         clearTimeout(timer);
         const isTimeout = err instanceof Error && err.name === "AbortError";
         if (attempt < retries - 1) {
-          await new Promise(r => setTimeout(r, 3000));
+          await new Promise(r => setTimeout(r, 3_000));
           setTracks(t=>t.map(x=>x.file===file
-            ? {...x, analyzeStatus: isTimeout ? "Timeout, retrying..." : `Retrying (${attempt+2}/${retries})...`}
+            ? {...x, analyzeStatus: isTimeout ? "Timeout, retrying..." : "Retrying..."}
             : x));
         } else {
-          const msg = isTimeout ? "Timeout (3 min)" : err instanceof Error ? err.message : "Analysis failed";
+          const msg = isTimeout ? "Timeout (120s)" : err instanceof Error ? err.message : "Analysis failed";
           return {analyzed:false, analyzing:false, analyzeStatus:undefined, error:msg};
         }
       }
