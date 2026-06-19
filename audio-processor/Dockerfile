@@ -11,10 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Cython first — madmom needs it at build time
-RUN pip install --no-cache-dir Cython==3.0.11
+# Step 1: install numpy + Cython BEFORE madmom so --no-build-isolation can use them
+RUN pip install --no-cache-dir "numpy==1.23.5" "Cython==3.0.11" "scipy==1.11.4"
 
-# Copy and install requirements
+# Step 2: install madmom WITHOUT build isolation — reuses numpy 1.23.5 (has numpy.bool)
+RUN pip install --no-cache-dir --no-build-isolation madmom==0.16.1
+
+# Step 3: install remaining runtime deps
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
