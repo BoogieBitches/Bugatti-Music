@@ -18,6 +18,7 @@ import os
 import shutil
 import tempfile
 import threading
+import time
 import urllib.request
 import uuid
 from contextlib import asynccontextmanager
@@ -77,10 +78,62 @@ _jobs_lock = threading.Lock()
 
 # ── Lifespan ─────────────────────────────────────────────────────────────────
 
+TRACK_TTL_SEC = 2 * 3600   # удаляем треки старше 2 часов
+JOB_TTL_SEC   = 4 * 3600   # удаляем завершённые job старше 4 часов
+CLEANUP_INTERVAL_SEC = 3600  # запускаем каждый час
+
+
+def _cleanup_old_files() -> None:
+    """Удаляет старые треки и выходные файлы, очищает _jobs."""
+    now = time.time()
+
+    removed_tracks = removed_outputs = 0
+    for f in STORE_DIR.glob("*"):
+        try:
+            if now - f.stat().st_mtime > TRACK_TTL_SEC:
+                f.unlink()
+                removed_tracks += 1
+        except OSError:
+            pass
+
+    for f in OUTPUT_DIR.glob("*"):
+        try:
+            if now - f.stat().st_mtime > JOB_TTL_SEC:
+                f.unlink()
+                removed_outputs += 1
+        except OSError:
+            pass
+
+    stale_jobs = []
+    with _jobs_lock:
+        for jid, job in list(_jobs.items()):
+            if job.status in ("done", "error"):
+                out = Path(job.output_path) if job.output_path else None
+                if out is None or not out.exists():
+                    stale_jobs.append(jid)
+        for jid in stale_jobs:
+            del _jobs[jid]
+
+    logger.info(
+        "Cleanup: removed %d tracks, %d outputs, %d stale jobs",
+        removed_tracks, removed_outputs, len(stale_jobs),
+    )
+
+
+async def _periodic_cleanup() -> None:
+    while True:
+        await asyncio.sleep(CLEANUP_INTERVAL_SEC)
+        await asyncio.get_event_loop().run_in_executor(None, _cleanup_old_files)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Запускаем периодическую очистку в фоне
+    task = asyncio.create_task(_periodic_cleanup())
+    logger.info("Periodic cleanup task started (every %dh)", CLEANUP_INTERVAL_SEC // 3600)
     yield
-    # cleanup old temp files on exit
+    task.cancel()
+    # Полная очистка при остановке сервера
     for d in (STORE_DIR, OUTPUT_DIR):
         for f in d.glob("*"):
             try:
