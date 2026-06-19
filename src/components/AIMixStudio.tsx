@@ -354,7 +354,7 @@ export function AIMixStudio({
     pollLastProgressTimeRef.current = Date.now();
     pollRef.current = setInterval(async()=>{
       try {
-        const res = await fetch(`${apiBase}/audio/jobs/${jid}`);
+        const res = await fetch(`${apiBase}/jobs/${jid}`);
 
         // 404 = сервер перезагрузился, job потерян
         if(res.status === 404){
@@ -579,7 +579,7 @@ export function AIMixStudio({
         target_bpm: targetBpm ?? (tracks[0]?.bpm || 128),
       };
 
-      const res = await fetch(`${apiBase}/audio/generate`,{
+      const res = await fetch(`${apiBase}/generate`,{
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify(payload),
@@ -620,7 +620,7 @@ export function AIMixStudio({
           duration: t.durationSeconds??300,
         }))
       };
-      const res = await fetch(`${apiBase}/audio/plan`,{
+      const res = await fetch(`${apiBase}/plan`,{
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify(payload),
@@ -680,7 +680,7 @@ export function AIMixStudio({
             <button onClick={()=>setRestoredMix(null)} className="text-xs text-white/20 hover:text-white/60 transition-colors">✕ Close</button>
           </div>
           <WaveformPlayer
-            url={`${restoredMix.apiBase}/audio/jobs/${restoredMix.jobId}/download`}
+            url={`${restoredMix.apiBase}/jobs/${restoredMix.jobId}/download`}
             durationMin={restoredMix.durationMin}
             downloadFilename={`bugatti-mix-${restoredMix.jobId.slice(0,8)}.mp3`}
           />
@@ -999,7 +999,7 @@ export function AIMixStudio({
       {done&&jobId&&(
         <div className="space-y-4">
           <WaveformPlayer
-            url={`${AUDIO_API}/audio/jobs/${jobId}/download`}
+            url={`${AUDIO_API}/jobs/${jobId}/download`}
             durationMin={jobDuration}
             downloadFilename={`bugatti-mix-${jobId.slice(0,8)}.mp3`}
           />
