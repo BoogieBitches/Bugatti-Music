@@ -6,4 +6,3 @@ scipy==1.11.4
 pydub==0.25.1
 pyrubberband==0.3.0
 librosa>=0.10.0
-madmom==0.16.1
