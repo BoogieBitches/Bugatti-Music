@@ -24,26 +24,34 @@ _SR    = 22_050
 _HOP   = 512
 _N_FFT = 2_048
 
-# ── Optional high-accuracy beat trackers ──────────────────────────────────────
-try:
-    from madmom.features.beats import RNNBeatProcessor, BeatTrackingProcessor
-    _HAS_MADMOM = True
-    logger.info("madmom available — deep-learning beat tracking enabled")
-except Exception:
-    _HAS_MADMOM = False
+# ── Optional high-accuracy beat trackers (checked lazily — don't import at startup) ───
+_HAS_MADMOM: bool | None = None   # None = not yet checked
+_HAS_LIBROSA: bool | None = None
 
-try:
-    import librosa as _librosa
-    _HAS_LIBROSA = True
-    logger.info("librosa available — ML beat tracking enabled")
-except Exception:
-    _HAS_LIBROSA = False
+def _check_madmom() -> bool:
+    """Import madmom lazily so startup healthcheck passes before heavy models load."""
+    global _HAS_MADMOM
+    if _HAS_MADMOM is None:
+        try:
+            import madmom.features.beats  # noqa: F401
+            _HAS_MADMOM = True
+            logger.info("madmom available — deep-learning beat tracking enabled")
+        except Exception as exc:
+            _HAS_MADMOM = False
+            logger.warning("madmom not available: %s", exc)
+    return _HAS_MADMOM
 
-if not _HAS_MADMOM and not _HAS_LIBROSA:
-    logger.warning(
-        "Neither madmom nor librosa found — using scipy beat tracking (lower accuracy). "
-        "Run: pip install librosa"
-    )
+def _check_librosa() -> bool:
+    global _HAS_LIBROSA
+    if _HAS_LIBROSA is None:
+        try:
+            import librosa  # noqa: F401
+            _HAS_LIBROSA = True
+            logger.info("librosa available — ML beat tracking enabled")
+        except Exception as exc:
+            _HAS_LIBROSA = False
+            logger.warning("librosa not available: %s", exc)
+    return _HAS_LIBROSA
 
 # ── Camelot / key tables ───────────────────────────────────────────────────────
 CAMELOT_MINOR = {0:"8A",1:"3A",2:"10A",3:"5A",4:"12A",5:"7A",
@@ -99,9 +107,10 @@ def detect_beatgrid(
 ) -> tuple[float, list[float]]:
     """Return (bpm, beat_times_seconds) using the best available tracker."""
 
-    # ── 1. madmom (RNN, best accuracy) ────────────────────────────────────
-    if _HAS_MADMOM:
+    # ── 1. madmom (RNN, best accuracy) — lazy import ──────────────────────
+    if _check_madmom():
         try:
+            from madmom.features.beats import RNNBeatProcessor, BeatTrackingProcessor
             act   = RNNBeatProcessor()(file_path)
             beats = BeatTrackingProcessor(fps=100)(act)
             if len(beats) >= 4:
@@ -115,9 +124,10 @@ def detect_beatgrid(
         except Exception as exc:
             logger.warning("madmom failed: %s — falling back to librosa", exc)
 
-    # ── 2. librosa (dynamic-programming, solid fallback) ──────────────────
-    if _HAS_LIBROSA:
+    # ── 2. librosa (dynamic-programming, solid fallback) — lazy import ────
+    if _check_librosa():
         try:
+            import librosa as _librosa
             y, sr           = _librosa.load(file_path, sr=_SR, mono=True,
                                              duration=duration_sec)
             tempo, beat_fr  = _librosa.beat.beat_track(y=y, sr=sr, units="frames")
@@ -349,11 +359,12 @@ def analyze_audio(file_path: str) -> dict:
     Returns BPM, key, energy, genre, sections (spectral) AND the full
     beatgrid (list of beat timestamps in seconds).
     """
-    # Beat tracking (madmom → librosa → scipy)
-    bpm, beatgrid = detect_beatgrid(file_path, duration_sec=90.0)
+    # Beat tracking — 45 s is enough for accurate BPM/key in house/techno
+    # (was 90 s, madmom RNN on 90 s was 2–3× slower with no accuracy gain)
+    bpm, beatgrid = detect_beatgrid(file_path, duration_sec=45.0)
 
     # Load short slice for key/energy, full track for sections
-    y_short = _load(file_path, duration_sec=90)
+    y_short = _load(file_path, duration_sec=45)
     y_full  = _load(file_path)
     duration = len(y_full) / _SR
 
