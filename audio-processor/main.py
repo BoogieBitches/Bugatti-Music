@@ -133,13 +133,10 @@ async def lifespan(app: FastAPI):
     logger.info("Periodic cleanup task started (every %dh)", CLEANUP_INTERVAL_SEC // 3600)
     yield
     task.cancel()
-    # Полная очистка при остановке сервера
-    for d in (STORE_DIR, OUTPUT_DIR):
-        for f in d.glob("*"):
-            try:
-                f.unlink()
-            except OSError:
-                pass
+    # NOTE: We intentionally do NOT delete track files on shutdown.
+    # Railway restarts the process on every deploy — deleting files here
+    # would wipe uploads that users are still working with.
+    # Files are cleaned up by the TTL-based periodic cleanup instead (2h TTL).
 
 
 app = FastAPI(title="Bugatti Sound — Audio Processor", version="1.0.0", lifespan=lifespan)
