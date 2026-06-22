@@ -347,7 +347,7 @@ export function AIMixStudio({
   },[tracks]);
 
   function startPolling(jid: string) {
-    const apiBase = AUDIO_API;
+    const apiBase = RAILWAY_URL + '/audio';
     pollFailRef.current = 0;
     pollStartRef.current = Date.now();
     pollLastProgressRef.current = -1;
