@@ -569,7 +569,7 @@ export function AIMixStudio({
     setGenerating(true); setGenProgress(2); setGenMessage("Submitting tracks...");
     setDone(false); setJobId(null); setGenError(null);
 
-    const apiBase = AUDIO_API;
+    const apiBase = RAILWAY_URL + '/audio'; // fixed: bypass Vercel proxy → go direct to Railway
     const transPlans = transitions; // computed below
 
     try {
