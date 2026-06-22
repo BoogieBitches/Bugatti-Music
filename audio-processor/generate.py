@@ -566,7 +566,10 @@ def _three_band_crossfade_v2(
     t          = np.linspace(0.0, 1.0, n_ch, dtype=np.float32)
     g_out      = np.cos(t * np.pi / 2.0)
     g_in       = np.sin(t * np.pi / 2.0)
-    t_bass     = np.clip((t - 0.25) / 0.50, 0.0, 1.0)
+    # Bass swap starts at t=0 and completes by 45% of the mix zone.
+    # Real DJs immediately kill the bass of the outgoing track as the
+    # transition begins. Two basslines at full volume = frequency clash.
+    t_bass     = np.clip(t / 0.45, 0.0, 1.0)
     g_bass_out = np.cos(t_bass * np.pi / 2.0)
     g_bass_in  = np.sin(t_bass * np.pi / 2.0)
 
@@ -617,35 +620,55 @@ def _filter_sweep_v2(
     in_seg: AudioSegment,
     bpm: float = 128.0,
 ) -> AudioSegment:
-    """Filter sweep: high-pass out_tail while fading in in_seg. Pre-split version.
+    """Filter sweep: real progressive high-pass sweep from 50 Hz → 800 Hz.
+
+    Divides out_tail into 16 chunks, applies exponentially increasing high-pass
+    cutoff to each chunk (50 Hz → 800 Hz). This creates an authentic DJ-style
+    filter sweep rather than a static high-pass.
 
     Invariant: returned segment starts at in_seg's beat-1 (position 0 of in_seg).
-
-    Uses overlay (not sequential append) so beat-1 of in_seg stays at t=0 of
-    the returned segment. Sequential append was wrong: it put in_seg's beat-1
-    at t = T - cf_ms, breaking the phrase-tracking invariant for subsequent
-    transitions.
     """
     T = len(out_tail)
-    try:
-        swept = _eq_hp(out_tail, cutoff=350).fade_out(T)
-    except Exception:
-        swept = out_tail.fade_out(T)
-
-    # Overlay: high-passed/fading outgoing track sits on top of in_seg.
-    # in_seg is at beat-1 from t=0 and plays at full amplitude underneath.
-    # The outgoing track sweeps up and fades out over the same T-ms window.
     in_head = _pad_or_trim(in_seg[:T], T)
-    swept   = _pad_or_trim(swept,      T)
     in_rest = in_seg[T:]
 
+    N_CHUNKS = 16
+    chunk_ms = max(50, T // N_CHUNKS)
+    swept_parts: list[AudioSegment] = []
+
+    for i in range(N_CHUNKS):
+        progress  = i / max(N_CHUNKS - 1, 1)          # 0.0 → 1.0
+        cutoff    = int(50 + (progress ** 1.5) * 750)  # 50 Hz → 800 Hz exponential
+        start_ms  = i * chunk_ms
+        end_ms    = min(T, (i + 1) * chunk_ms)
+        chunk     = out_tail[start_ms:end_ms]
+        if len(chunk) > 256:
+            try:
+                swept_parts.append(_eq_hp(chunk, cutoff=float(cutoff)))
+            except Exception:
+                swept_parts.append(chunk)
+        elif chunk:
+            swept_parts.append(chunk)
+
+    if swept_parts:
+        swept = swept_parts[0]
+        for part in swept_parts[1:]:
+            swept = swept + part
+        swept = _pad_or_trim(swept, T).fade_out(min(T, 3_000))
+    else:
+        swept = out_tail.fade_out(T)
+
+    swept = _pad_or_trim(swept, T)
+
     try:
-        # -3 dB attenuation on outgoing so bass doesn't clash during the sweep
         mixed = in_head.overlay(swept - 3)
     except Exception:
         mixed = in_head.overlay(swept)
 
-    # Invariant maintained: mixed starts at in_seg[0] = beat-1.
+    logger.info(
+        "Filter sweep: progressive HP 50→800 Hz, %d chunks, T=%d ms",
+        N_CHUNKS, T,
+    )
     return mixed + in_rest
 
 
