@@ -523,11 +523,27 @@ export function AIMixStudio({
   async function handleGenerate(){
     if(!selectedStyle||tracks.length===0) return;
 
-    // Guard: all tracks must have a backend trackId
+    // Auto re-analyze tracks that are missing a trackId or whose server file was cleared by a restart
     const missingStore = tracks.filter(t=>!t.trackId);
     if(missingStore.length>0){
-      setGenError(`${missingStore.length} track${missingStore.length>1?"s":""} not uploaded to server yet. Re-analyze them first (click ↺ next to the track).`);
-      return;
+      setGenerating(true);
+      setGenProgress(1);
+      setGenMessage(`Re-uploading ${missingStore.length} track(s) after server restart...`);
+      setGenError(null);
+      // Re-analyze all missing tracks (files are still in browser memory)
+      await Promise.all(missingStore.map(async (track) => {
+        if(!track.file) return;
+        setTracks(t=>t.map(x=>x.id===track.id?{...x,analyzing:true,error:undefined}:x));
+        const analysis = await analyzeTrackFile(track.file);
+        setTracks(t=>t.map(x=>x.id===track.id?{...x,...analysis}:x));
+      }));
+      setGenerating(false);
+      // Check again after re-analysis
+      const stillMissing = tracks.filter(t=>!t.trackId&&!missingStore.find(m=>m.id===t.id));
+      if(stillMissing.length>0){
+        setGenError(`${stillMissing.length} track(s) still failed to upload. Check your connection and try again.`);
+        return;
+      }
     }
 
     // Server-side quota check (cannot be bypassed)
