@@ -696,7 +696,7 @@ export function AIMixStudio({
             <button onClick={()=>setRestoredMix(null)} className="text-xs text-white/20 hover:text-white/60 transition-colors">✕ Close</button>
           </div>
           <WaveformPlayer
-            url={`${restoredMix.apiBase}/jobs/${restoredMix.jobId}/download`}
+            url={`${RAILWAY_URL}/audio/jobs/${restoredMix.jobId}/download`}
             durationMin={restoredMix.durationMin}
             downloadFilename={`bugatti-mix-${restoredMix.jobId.slice(0,8)}.mp3`}
           />
@@ -1015,7 +1015,7 @@ export function AIMixStudio({
       {done&&jobId&&(
         <div className="space-y-4">
           <WaveformPlayer
-            url={`${AUDIO_API}/jobs/${jobId}/download`}
+            url={`${RAILWAY_URL}/audio/jobs/${jobId}/download`}
             durationMin={jobDuration}
             downloadFilename={`bugatti-mix-${jobId.slice(0,8)}.mp3`}
           />
