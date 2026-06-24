@@ -566,12 +566,13 @@ def _three_band_crossfade_v2(
     t          = np.linspace(0.0, 1.0, n_ch, dtype=np.float32)
     g_out      = np.cos(t * np.pi / 2.0)
     g_in       = np.sin(t * np.pi / 2.0)
-    # Bass swap starts at t=0 and completes by 45% of the mix zone.
-    # Real DJs immediately kill the bass of the outgoing track as the
-    # transition begins. Two basslines at full volume = frequency clash.
-    t_bass     = np.clip(t / 0.45, 0.0, 1.0)
-    g_bass_out = np.cos(t_bass * np.pi / 2.0)
-    g_bass_in  = np.sin(t_bass * np.pi / 2.0)
+    # Sequential bass swap: out fades 0→0% over first 50%, in rises 50→100% over last 50%.
+    # NO simultaneous bass — one ends before the other starts.
+    # This is how Serato/Traktor EQ swap works: kill out bass first, then bring in bass.
+    t_bass_out = np.clip(t / 0.50, 0.0, 1.0)          # 0→1 over first 50% of mix
+    t_bass_in  = np.clip((t - 0.50) / 0.50, 0.0, 1.0) # 0→1 over last 50% of mix
+    g_bass_out = np.cos(t_bass_out * np.pi / 2.0)      # 1→0 (fade out bass)
+    g_bass_in  = np.sin(t_bass_in  * np.pi / 2.0)      # 0→1 (fade in bass)
 
     if ch == 2:
         g_out      = np.repeat(g_out,      2)[:n]
@@ -638,7 +639,7 @@ def _filter_sweep_v2(
 
     for i in range(N_CHUNKS):
         progress  = i / max(N_CHUNKS - 1, 1)          # 0.0 → 1.0
-        cutoff    = int(50 + (progress ** 1.5) * 750)  # 50 Hz → 800 Hz exponential
+        cutoff    = int(60 + (progress ** 1.5) * 240)  # 60 Hz → 300 Hz — only sub-bass/bass removed
         start_ms  = i * chunk_ms
         end_ms    = min(T, (i + 1) * chunk_ms)
         chunk     = out_tail[start_ms:end_ms]
@@ -666,7 +667,7 @@ def _filter_sweep_v2(
         mixed = in_head.overlay(swept)
 
     logger.info(
-        "Filter sweep: progressive HP 50→800 Hz, %d chunks, T=%d ms",
+        "Filter sweep: progressive HP 60→300 Hz (bass-only sweep), %d chunks, T=%d ms",
         N_CHUNKS, T,
     )
     return mixed + in_rest
