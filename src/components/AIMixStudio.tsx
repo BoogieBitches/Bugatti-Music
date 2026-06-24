@@ -26,6 +26,7 @@ interface Track {
   analyzing: boolean;
   analyzeStatus?: string;
   error?: string;
+  stemsStatus?: string;   // 'not_started'|'queued'|'warming_up'|'uploading'|'processing'|'downloading'|'done'|'error'
 }
 
 interface TransitionPlan {
@@ -520,6 +521,43 @@ export function AIMixStudio({
     setTracks(t=>t.map(x=>x.id===trackId?{...x,...analysis}:x));
   }
 
+  // ── Stem separation ──────────────────────────────────────────────────────
+  async function requestStems(trackId: string) {
+    const track = tracks.find(t => t.id === trackId);
+    if (!track?.trackId) return;
+    setTracks(t => t.map(x => x.id === trackId ? { ...x, stemsStatus: 'queued' } : x));
+    try {
+      const form = new FormData();
+      form.append('track_id', track.trackId!);
+      const res = await fetch(`${RAILWAY_URL}/audio/stems/request`, { method: 'POST', body: form });
+      const data = await res.json();
+      setTracks(t => t.map(x => x.id === trackId ? { ...x, stemsStatus: data.status } : x));
+    } catch {
+      setTracks(t => t.map(x => x.id === trackId ? { ...x, stemsStatus: 'error' } : x));
+    }
+  }
+
+  // Poll stems status every 12 s for tracks that are in progress
+  useEffect(() => {
+    const active = tracks.filter(t =>
+      t.trackId && t.stemsStatus &&
+      !['not_started', 'done', 'error'].includes(t.stemsStatus)
+    );
+    if (active.length === 0) return;
+    const timer = setInterval(async () => {
+      await Promise.all(active.map(async track => {
+        try {
+          const res = await fetch(`${RAILWAY_URL}/audio/stems/status/${track.trackId}`);
+          const data = await res.json();
+          setTracks(t => t.map(x =>
+            x.id === track.id ? { ...x, stemsStatus: data.status } : x
+          ));
+        } catch { /* ignore transient errors */ }
+      }));
+    }, 12_000);
+    return () => clearInterval(timer);
+  }, [tracks.map(t => t.stemsStatus).join(',')]);
+
   async function handleGenerate(){
     if(!selectedStyle||tracks.length===0) return;
 
@@ -811,6 +849,33 @@ export function AIMixStudio({
                   </div>
                 ):(
                   <div className="text-xs text-white/25 italic">{track.analyzeStatus||"Analyzing..."}</div>
+                )}
+                {track.trackId&&track.analyzed&&(
+                  <button
+                    onClick={()=>{
+                      if(track.stemsStatus==='error'||!track.stemsStatus||track.stemsStatus==='not_started')
+                        requestStems(track.id);
+                    }}
+                    disabled={!!track.stemsStatus&&!['not_started','error',undefined].includes(track.stemsStatus as string)&&track.stemsStatus!=='done'}
+                    title={track.stemsStatus==='done'
+                      ?'AI stems ready — automatically used in next mix ✓'
+                      :'Separate this track into bass/drums/stems with AI (8–15 min, improves mix quality)'}
+                    className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded border transition-all
+                      ${track.stemsStatus==='done'
+                        ?'bg-emerald-500/20 border-emerald-500/30 text-emerald-400 cursor-default'
+                        :track.stemsStatus&&!['not_started','error'].includes(track.stemsStatus)
+                          ?'bg-purple-500/15 border-purple-500/25 text-purple-300 animate-pulse cursor-wait'
+                          :'bg-[var(--accent)]/10 border-[var(--accent)]/20 text-[var(--accent-2)] hover:bg-[var(--accent)]/20 cursor-pointer'
+                      }`}>
+                    {track.stemsStatus==='done'?'✦ STEMS'
+                      :track.stemsStatus==='warming_up'?'⚡ AI...'
+                      :track.stemsStatus==='uploading'?'↑ Upload'
+                      :track.stemsStatus==='processing'?'◎ AI...'
+                      :track.stemsStatus==='downloading'?'↓ Stems'
+                      :track.stemsStatus==='error'?'⚠ Retry'
+                      :track.stemsStatus==='queued'?'⋯ Queue'
+                      :'✦ Stems'}
+                  </button>
                 )}
                 <button onClick={()=>removeTrack(track.id)}
                   className="w-6 h-6 flex items-center justify-center text-white/20 hover:text-red-400 transition-colors text-lg shrink-0">×</button>
