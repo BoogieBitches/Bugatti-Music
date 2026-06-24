@@ -46,14 +46,17 @@ def _transition_type(bpm_score: int, key_score: int, energy_diff: int) -> str:
 
 
 def _bars(trans_type: str, bpm_score: int) -> int:
+    # Cap at 16 bars max. Phase-vocoder time-stretch accumulates ~10ms/bar of
+    # drift — at 32 bars that is 320ms (almost a full beat off). 16 bars keeps
+    # drift under 160ms, which is inaudible at the start of a beat.
     if trans_type == "cut":
+        return 4
+    elif trans_type == "crossfade" and bpm_score >= 85:
         return 8
-    elif trans_type == "crossfade" and bpm_score >= 90:
-        return 16
     elif trans_type == "crossfade":
-        return 32
+        return 16
     else:
-        return 32
+        return 16
 
 
 @dataclass
