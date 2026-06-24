@@ -453,6 +453,110 @@ def _snap_to_nearest_beat(
     return best_ms
 
 
+
+# ── Beatgrid-based phrase alignment (v7) ─────────────────────────────────────
+# madmom returns the timestamp of every beat in the track (hundreds of entries).
+# Previously only beatgrid[0] was used (to trim the intro). Now all beats are
+# used for accurate phrase snapping and beat correction.
+
+def _beatgrid_to_seg_ms(
+    beatgrid: list[float],
+    beat_idx: int,
+    bpm_orig: float,
+    master_bpm: float,
+) -> float:
+    """Convert a beatgrid index to ms in the phase-trimmed + time-stretched track.
+
+    After phase trim, beatgrid[0] was removed so beat-1 is at t=0 ms.
+    After time-stretch from bpm_orig → master_bpm, each second of original time
+    maps to (bpm_orig / master_bpm) seconds in the stretched output.
+    """
+    if beat_idx < 0 or beat_idx >= len(beatgrid):
+        return -1.0
+    stretch = bpm_orig / master_bpm          # e.g. 130 BPM → 128 BPM: ratio = 1.016
+    return (beatgrid[beat_idx] - beatgrid[0]) * stretch * 1_000.0
+
+
+def _beatgrid_phrase_ms(
+    beatgrid: list[float],
+    bpm_orig: float,
+    master_bpm: float,
+    target_ms: int,
+    phrase_beats: int = 32,   # 8 bars × 4 beats/bar
+) -> int:
+    """Find the phrase boundary in current_seg (ms) closest to target_ms.
+
+    Walks the FULL beatgrid at every phrase_beats interval and picks the
+    boundary nearest to target_ms. This correctly handles tempo drift —
+    real music BPM is never perfectly constant, so n × phrase_ms is always
+    slightly off. The beatgrid gives us the actual beat positions.
+
+    Falls back to target_ms when beatgrid is too short.
+    """
+    if not beatgrid or len(beatgrid) < phrase_beats + 1:
+        return target_ms
+
+    best_ms   = target_ms
+    best_diff = float("inf")
+
+    idx = 0
+    while idx < len(beatgrid):
+        ms = _beatgrid_to_seg_ms(beatgrid, idx, bpm_orig, master_bpm)
+        if ms < 0:
+            break
+        diff = abs(ms - target_ms)
+        if diff < best_diff:
+            best_diff = diff
+            best_ms   = int(round(ms))
+        idx += phrase_beats
+
+    logger.debug(
+        "_beatgrid_phrase_ms: target=%d ms → %d ms (delta=%+d ms)",
+        target_ms, best_ms, best_ms - target_ms,
+    )
+    return best_ms
+
+
+def _snap_beat_from_grid(
+    beatgrid: list[float],
+    bpm_orig: float,
+    master_bpm: float,
+    rough_ms: int,
+    max_offset_ms: int = 500,
+) -> int:
+    """Micro-snap rough_ms to the nearest actual beat using the full beatgrid.
+
+    O(n) lookup — far faster and more accurate than spectral-flux kick
+    detection used in _snap_to_nearest_beat. Returns rough_ms unchanged
+    when no beat is found within max_offset_ms (safety guard).
+    """
+    if not beatgrid or len(beatgrid) < 2:
+        return rough_ms
+
+    best_ms   = rough_ms
+    best_diff = float("inf")
+
+    for idx in range(len(beatgrid)):
+        ms   = _beatgrid_to_seg_ms(beatgrid, idx, bpm_orig, master_bpm)
+        if ms < 0:
+            continue
+        diff = abs(ms - rough_ms)
+        if diff < best_diff:
+            best_diff = diff
+            best_ms   = int(round(ms))
+        # beatgrid is time-sorted → once we pass the search window, stop early
+        if ms > rough_ms + max_offset_ms:
+            break
+
+    if best_diff > max_offset_ms:
+        return rough_ms   # no close beat — do not snap
+
+    logger.info(
+        "_snap_beat_from_grid: %d ms → %d ms (delta=%+d ms)",
+        rough_ms, best_ms, best_ms - rough_ms,
+    )
+    return best_ms
+
 # ── Mix point calculation (the core v6 fix) ───────────────────────────────────
 
 def _calculate_mix_point_ms(
@@ -506,22 +610,27 @@ def _calculate_mix_point_ms(
 
     target_ms = max(0, target_ms)
 
-    # ── Phrase-boundary snap ────────────────────────────────────────────────
-    # Heuristic is always correct here: current_seg starts at beat-1 (invariant),
-    # so phrase boundaries are exactly at n * phrase_ms from position 0.
-    # The beatgrid walk was REMOVED — it used original-time beat positions without
-    # subtracting the phase offset already trimmed from the track start, causing
-    # a sub-beat misalignment.
-    if phrase_ms > 0 and target_ms > 0:
-        n = target_ms // phrase_ms  # floor → last phrase AT or BEFORE target
+    # ── Phrase-boundary snap (v7: beatgrid-aware) ────────────────────────────
+    # When we have a full beatgrid (from madmom/librosa), use ALL beat positions
+    # to find the actual phrase boundary. Real music has subtle tempo drift —
+    # n × phrase_ms is always slightly off. The beatgrid gives exact positions.
+    if spec.beatgrid and len(spec.beatgrid) > 32:
+        bpm_orig_spec = _bpm_from_beatgrid(spec.beatgrid, float(spec.bpm or master_bpm))
+        mix_start_ms  = _beatgrid_phrase_ms(
+            spec.beatgrid, bpm_orig_spec, master_bpm, target_ms, phrase_beats=32,
+        )
+    elif phrase_ms > 0 and target_ms > 0:
+        n            = target_ms // phrase_ms
         mix_start_ms = int(n * phrase_ms)
     else:
         mix_start_ms = target_ms
     logger.info(
-        "Mix point: %d ms (%.1f bars, target=%d ms, outro=%.1f s, 32bars=%d ms)",
+        "Mix point: %d ms (%.1f bars, target=%d ms, outro=%.1f s, "
+        "32bars=%d ms, beatgrid=%s)",
         mix_start_ms,
         mix_start_ms / max(_bars_to_ms(1, master_bpm), 1),
         target_ms, outro_sec, bars32_start,
+        "yes" if spec.beatgrid else "no",
     )
 
     # Clamp to valid range
@@ -827,12 +936,19 @@ def generate_mix(
             current_seg_len_ms = len(current_seg),
         )
 
-        # ── Beat-snap: correct accumulated BPM drift at the mix point ───────
-        # n*phrase_ms is the THEORETICAL position. Even a 0.5 BPM error
-        # accumulates to ~300 ms over 32 bars. Snap to the nearest actual
-        # kick detected within ±1 bar — same as Serato Quantize.
+        # ── Beat-snap: micro-correct mix point to nearest actual beat (v7) ───
+        # Use full beatgrid when available (fast O(n) lookup, no DSP).
+        # Fall back to spectral-flux kick detection for tracks without beatgrid.
         if mix_start_ms > 0:
-            mix_start_ms = _snap_to_nearest_beat(current_seg, mix_start_ms, master_bpm, search_bars=1.0)
+            bpm_orig_i = _bpm_from_beatgrid(tracks[i].beatgrid, float(tracks[i].bpm or master_bpm))
+            if tracks[i].beatgrid and len(tracks[i].beatgrid) > 4:
+                mix_start_ms = _snap_beat_from_grid(
+                    tracks[i].beatgrid, bpm_orig_i, master_bpm, mix_start_ms,
+                )
+            else:
+                mix_start_ms = _snap_to_nearest_beat(
+                    current_seg, mix_start_ms, master_bpm, search_bars=1.0,
+                )
 
         logger.info(
             "Track %d/%d: mix_start=%d ms (%.1f bars), seg_len=%d ms",
