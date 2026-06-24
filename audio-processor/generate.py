@@ -19,6 +19,8 @@ Key fixes over v6:
 from __future__ import annotations
 
 import gc
+import tempfile
+from pathlib import Path as _Path
 import io
 import logging
 import os
@@ -32,6 +34,9 @@ from scipy import ndimage as _ndi
 from pydub import AudioSegment
 
 logger = logging.getLogger(__name__)
+
+# Stem files written by Railway stem-separation endpoint
+_STEM_STORE = _Path(tempfile.gettempdir()) / "bugatti-audio-store"
 
 # ── Optional high-quality time-stretcher ──────────────────────────────────────
 try:
@@ -646,6 +651,8 @@ def _three_band_crossfade_v2(
     out_tail: AudioSegment,
     in_seg: AudioSegment,
     bpm: float = 128.0,
+    in_track_id: str | None = None,
+    in_stem_offset_ms: int = 0,
 ) -> AudioSegment:
     """Professional equal-power DJ crossfade with bass EQ swap.
 
@@ -703,18 +710,37 @@ def _three_band_crossfade_v2(
                 return r
             return sp.filtfilt(b, a, arr).astype(np.float32)
 
+        # ── Try Demucs bass stem for incoming track ────────────────────────
+        # The stem covers the full track; apply same phase offset as in_raw.
+        # Uses the real isolated bass — no butterworth filter artifacts.
+        in_bass_stem: np.ndarray | None = None
+        if in_track_id:
+            _sp = _STEM_STORE / f"{in_track_id}_stems_bass.wav"
+            if _sp.exists():
+                try:
+                    _stem_seg = (AudioSegment.from_file(str(_sp))
+                                 .set_frame_rate(sr).set_channels(ch))
+                    if in_stem_offset_ms > 1 and in_stem_offset_ms < len(_stem_seg) - T - 500:
+                        _stem_seg = _stem_seg[in_stem_offset_ms:]
+                    in_bass_stem = _seg_to_float(_pad_or_trim(_stem_seg, T))[:n]
+                    logger.info("Crossfade v2: using Demucs bass stem for in_track %s", in_track_id)
+                except Exception as _e:
+                    logger.warning("in bass stem load failed: %s", _e)
+
         out_bass = _filt2(out_arr, b_lp, a_lp)[:n]
         out_mids = _filt2(out_arr, b_hp, a_hp)[:n]
-        in_bass  = _filt2(in_arr,  b_lp, a_lp)[:n]
-        in_mids  = _filt2(in_arr,  b_hp, a_hp)[:n]
+        # If stem available use it; otherwise butterworth filter
+        in_bass  = in_bass_stem if in_bass_stem is not None else _filt2(in_arr, b_lp, a_lp)[:n]
+        in_mids  = _filt2(in_arr, b_hp, a_hp)[:n]
 
         mixed = (
             out_bass * g_bass_out + out_mids * g_out +
             in_bass  * g_bass_in  + in_mids  * g_in
         )
+        stem_label = "stem+EQ" if in_bass_stem is not None else "EQ"
         logger.info(
-            "Crossfade v2: equal-power + bass-swap, T=%d ms (%.1f bars @ %.0f BPM) — BEAT ALIGNED",
-            T, T / max(_bars_to_ms(1, bpm), 1), bpm,
+            "Crossfade v2: equal-power + bass-swap [%s], T=%d ms (%.1f bars @ %.0f BPM) — BEAT ALIGNED",
+            stem_label, T, T / max(_bars_to_ms(1, bpm), 1), bpm,
         )
     except Exception as exc:
         logger.warning("Bass-split crossfade failed (%s) — equal-power fallback", exc)
@@ -1038,7 +1064,13 @@ def generate_mix(
                 current_seg = _echo_out_v2(out_tail, in_raw, master_bpm)
             else:
                 # crossfade (default and most common)
-                current_seg = _three_band_crossfade_v2(out_tail, in_raw, master_bpm)
+                # pass incoming track info so crossfade can use Demucs bass stem
+                _in_off = int(offset_b) if offset_b > 1 else 0
+                current_seg = _three_band_crossfade_v2(
+                    out_tail, in_raw, master_bpm,
+                    in_track_id=tracks[i + 1].track_id,
+                    in_stem_offset_ms=_in_off,
+                )
         except Exception as exc:
             logger.warning("Transition %d (%s) failed — simple crossfade: %s", i, label, exc)
             cf = max(1_000, min(fade_ms, 8_000, len(out_tail) - 500, len(in_raw) - 500))
