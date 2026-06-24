@@ -60,6 +60,9 @@ STORE_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR = Path(tempfile.gettempdir()) / "bugatti-audio-output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# ── Demucs HF Space ──────────────────────────────────────────────────────────
+DEMUCS_URL = os.environ.get("DEMUCS_URL", "https://bugattimusic-bugatti-demucs.hf.space")
+
 # ── In-memory job registry ───────────────────────────────────────────────────
 
 @dataclass
@@ -75,6 +78,10 @@ class Job:
 
 _jobs: dict[str, Job] = {}
 _jobs_lock = threading.Lock()
+
+# ── Stem separation job registry ─────────────────────────────────────────────
+_stem_jobs: dict[str, dict] = {}   # track_id → {status, error}
+_stem_lock  = threading.Lock()
 
 # ── Lifespan ─────────────────────────────────────────────────────────────────
 
@@ -375,6 +382,149 @@ def job_download(job_id: str):
         media_type="audio/mpeg",
         filename=f"bugatti-mix-{job_id[:8]}.mp3",
     )
+
+
+# ── Stem separation helpers ───────────────────────────────────────────────────
+
+def _stems_path(track_id: str, stem: str) -> Path:
+    return STORE_DIR / f"{track_id}_stems_{stem}.wav"
+
+def _stems_ready(track_id: str) -> bool:
+    """True if all 4 Demucs stems exist on disk for this track."""
+    return all(_stems_path(track_id, s).exists() for s in ("bass", "drums", "other", "vocals"))
+
+def _submit_stems_bg(track_id: str, file_path: str) -> None:
+    """Background thread: upload track → HF Space Demucs → poll → save stems to disk."""
+    def _upd(status: str, error: str | None = None) -> None:
+        with _stem_lock:
+            _stem_jobs[track_id] = {"status": status, "error": error}
+
+    try:
+        # ── Wake up HF Space (may be sleeping) ───────────────────────────────
+        _upd("warming_up")
+        last_err = None
+        for attempt in range(6):
+            try:
+                with urllib.request.urlopen(f"{DEMUCS_URL}/health", timeout=30) as r:
+                    if r.status == 200:
+                        break
+            except Exception as e:
+                last_err = e
+                time.sleep(20)
+        else:
+            raise RuntimeError(f"HF Space не ответил после 2 мин: {last_err}")
+
+        # ── Upload audio as multipart/form-data ──────────────────────────────
+        _upd("uploading")
+        boundary = str(uuid.uuid4()).replace("-", "")
+        ext = Path(file_path).suffix or ".mp3"
+        with open(file_path, "rb") as fh:
+            file_bytes = fh.read()
+
+        def _field(name: str, value: str) -> bytes:
+            return (
+                f"--{boundary}
+"
+                f'Content-Disposition: form-data; name="{name}"
+
+'
+                f"{value}
+"
+            ).encode()
+
+        body = (
+            _field("track_id", track_id) +
+            f"--{boundary}
+".encode() +
+            f'Content-Disposition: form-data; name="file"; filename="track{ext}"
+'.encode() +
+            b"Content-Type: audio/mpeg
+
+" +
+            file_bytes +
+            f"
+--{boundary}--
+".encode()
+        )
+        req = urllib.request.Request(
+            f"{DEMUCS_URL}/separate",
+            data=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=180) as r:
+            resp = json.loads(r.read())
+        job_id = resp["job_id"]
+
+        # ── Poll status every 15 s (max 35 min) ──────────────────────────────
+        _upd("processing")
+        for _ in range(140):
+            time.sleep(15)
+            try:
+                with urllib.request.urlopen(f"{DEMUCS_URL}/status/{job_id}", timeout=15) as r:
+                    s = json.loads(r.read())
+                if s["status"] == "done":
+                    break
+                if s["status"] == "error":
+                    raise RuntimeError(f"Demucs error: {s.get('error')}")
+            except (urllib.error.URLError, TimeoutError):
+                pass  # transient — keep polling
+        else:
+            raise RuntimeError("Demucs timeout (>35 min)")
+
+        # ── Download stems ────────────────────────────────────────────────────
+        _upd("downloading")
+        for stem in ("bass", "drums", "other", "vocals"):
+            with urllib.request.urlopen(f"{DEMUCS_URL}/stems/{job_id}/{stem}", timeout=120) as r:
+                _stems_path(track_id, stem).write_bytes(r.read())
+
+        _upd("done")
+        logger.info("Stems saved for track %s", track_id)
+
+    except Exception as exc:
+        logger.exception("Stem separation failed for track %s", track_id)
+        _upd("error", str(exc))
+
+
+@app.post("/audio/stems/request")
+def request_stems(track_id: str = Form(...)):
+    """Submit a track for Demucs stem separation in the background (non-blocking)."""
+    stored_path: str | None = None
+    for ext in ALLOWED_EXT:
+        c = STORE_DIR / f"{track_id}{ext}"
+        if c.exists():
+            stored_path = str(c)
+            break
+    if not stored_path:
+        raise HTTPException(404, f"Track {track_id!r} not found — re-upload and analyze first.")
+
+    with _stem_lock:
+        current = _stem_jobs.get(track_id, {})
+
+    # Idempotent: don't re-submit if already running or done
+    if current.get("status") in ("warming_up", "uploading", "processing", "downloading"):
+        return {"track_id": track_id, "status": current["status"], "reused": True}
+    if current.get("status") == "done" or _stems_ready(track_id):
+        return {"track_id": track_id, "status": "done", "reused": True}
+
+    with _stem_lock:
+        _stem_jobs[track_id] = {"status": "queued", "error": None}
+
+    t = threading.Thread(target=_submit_stems_bg, args=(track_id, stored_path), daemon=True)
+    t.start()
+    return {"track_id": track_id, "status": "queued"}
+
+
+@app.get("/audio/stems/status/{track_id}")
+def stems_status(track_id: str):
+    """Poll stem separation progress for a track."""
+    if _stems_ready(track_id):
+        return {"track_id": track_id, "status": "done"}
+    with _stem_lock:
+        job = _stem_jobs.get(track_id)
+    if job is None:
+        return {"track_id": track_id, "status": "not_started"}
+    return {"track_id": track_id, **job}
 
 # ── Background generation task ───────────────────────────────────────────────
 
