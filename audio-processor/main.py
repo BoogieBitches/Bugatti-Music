@@ -416,40 +416,34 @@ def _submit_stems_bg(track_id: str, file_path: str) -> None:
 
         # ── Upload audio as multipart/form-data ──────────────────────────────
         _upd("uploading")
-        boundary = str(uuid.uuid4()).replace("-", "")
+        boundary = str(uuid.uuid4()).replace("-", "").encode()
         ext = Path(file_path).suffix or ".mp3"
         with open(file_path, "rb") as fh:
             file_bytes = fh.read()
 
-        def _field(name: str, value: str) -> bytes:
-            return (
-                f"--{boundary}
-"
-                f'Content-Disposition: form-data; name="{name}"
+        CRLF = b"\r\n"
 
-'
-                f"{value}
-"
-            ).encode()
+        def _mp_field(name: str, value: str) -> bytes:
+            return (
+                b"--" + boundary + CRLF +
+                b'Content-Disposition: form-data; name="' + name.encode() + b'"' + CRLF +
+                CRLF +
+                value.encode() + CRLF
+            )
 
         body = (
-            _field("track_id", track_id) +
-            f"--{boundary}
-".encode() +
-            f'Content-Disposition: form-data; name="file"; filename="track{ext}"
-'.encode() +
-            b"Content-Type: audio/mpeg
-
-" +
-            file_bytes +
-            f"
---{boundary}--
-".encode()
+            _mp_field("track_id", track_id) +
+            b"--" + boundary + CRLF +
+            b'Content-Disposition: form-data; name="file"; filename="track' + ext.encode() + b'"' + CRLF +
+            b"Content-Type: audio/mpeg" + CRLF +
+            CRLF +
+            file_bytes + CRLF +
+            b"--" + boundary + b"--" + CRLF
         )
         req = urllib.request.Request(
             f"{DEMUCS_URL}/separate",
             data=body,
-            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            headers={"Content-Type": "multipart/form-data; boundary=" + boundary.decode()},
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=180) as r:
