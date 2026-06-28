@@ -600,113 +600,293 @@ def _run_generation(job_id: str, req: GenerateRequest):
         _set_job(job_id, status="error", progress=0, message=str(exc))
 
 
-# ── MusicGen (HuggingFace Inference API) ─────────────────────────────────────
+# ── Beat Generator (procedural synthesis — no external API) ──────────────────
 
 class MusicGenRequest(BaseModel):
     prompt: str
-    duration: int = 10  # seconds, 5–30
+    duration: int = 30  # seconds
 
 
-def _hf_musicgen_chunk(prompt: str, chunk_sec: int, hf_token: str) -> bytes:
-    """Call HF MusicGen for a single chunk; returns raw WAV bytes."""
-    import requests as _requests
+def _detect_genre_params(prompt: str) -> dict:
+    """Detect BPM, scale and genre from prompt text."""
+    p = prompt.lower()
+    if "drum & bass" in p or "dnb" in p or "jungle" in p:
+        return {"bpm": 174, "genre": "dnb", "scale": "minor"}
+    if "techno" in p:
+        return {"bpm": 140, "genre": "techno", "scale": "minor"}
+    if "trance" in p:
+        return {"bpm": 138, "genre": "trance", "scale": "minor"}
+    if "dubstep" in p:
+        return {"bpm": 140, "genre": "dubstep", "scale": "minor"}
+    if "trap" in p:
+        return {"bpm": 140, "genre": "trap", "scale": "minor"}
+    if "house" in p:
+        return {"bpm": 128, "genre": "house", "scale": "major"}
+    if "lo-fi" in p or "lofi" in p or "lo fi" in p:
+        return {"bpm": 85, "genre": "lofi", "scale": "minor"}
+    if "hip" in p or "hop" in p or "boom" in p or "bap" in p:
+        return {"bpm": 90, "genre": "hiphop", "scale": "minor"}
+    if "ambient" in p or "chill" in p or "atmospheric" in p:
+        return {"bpm": 80, "genre": "ambient", "scale": "major"}
+    if "pop" in p:
+        return {"bpm": 120, "genre": "pop", "scale": "major"}
+    # extract numeric BPM if mentioned
+    import re
+    m = re.search(r"(\d{2,3})\s*bpm", p)
+    bpm = int(m.group(1)) if m else 120
+    return {"bpm": bpm, "genre": "house", "scale": "minor"}
 
-    max_tokens = max(256, min(chunk_sec * 51, 3200))
-    hf_url = "https://api-inference.huggingface.co/models/facebook/musicgen-small"
-    headers = {
-        "Authorization": f"Bearer {hf_token}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "inputs": prompt,
-        "parameters": {"max_new_tokens": max_tokens},
-    }
-    try:
-        resp = _requests.post(hf_url, headers=headers, json=payload, timeout=150)
-        if resp.status_code == 503:
-            raise RuntimeError("Model loading on HuggingFace — подожди 20 с и попробуй снова")
-        if resp.status_code != 200:
-            raise RuntimeError(f"HuggingFace error {resp.status_code}: {resp.text[:200]}")
-        return resp.content
-    except _requests.exceptions.ConnectionError as exc:
-        raise RuntimeError(f"Нет соединения с HuggingFace: {exc}")
-    except _requests.exceptions.Timeout:
-        raise RuntimeError("HuggingFace API timeout — попробуй ещё раз")
+
+def _synth_kick(sr: int, decay: float = 0.45, pitch: float = 60.0) -> "np.ndarray":
+    import numpy as np
+    t = np.linspace(0, decay, int(sr * decay), endpoint=False)
+    freq = pitch * np.exp(-15 * t)
+    env = np.exp(-8 * t)
+    click = np.exp(-300 * t) * 0.6
+    wave = np.sin(2 * np.pi * freq * t) * env + click
+    return (wave / np.max(np.abs(wave) + 1e-9) * 0.95).astype(np.float32)
 
 
-def _stitch_wav_chunks(wav_chunks: list[bytes], crossfade_ms: int = 2000) -> bytes:
-    """Merge WAV byte-strings into one WAV with crossfade using pydub."""
+def _synth_snare(sr: int, decay: float = 0.18) -> "np.ndarray":
+    import numpy as np
+    n = int(sr * decay)
+    t = np.linspace(0, decay, n, endpoint=False)
+    noise = np.random.randn(n).astype(np.float32)
+    tone = np.sin(2 * np.pi * 200 * t).astype(np.float32)
+    env = np.exp(-20 * t).astype(np.float32)
+    wave = (noise * 0.7 + tone * 0.3) * env
+    return (wave / np.max(np.abs(wave) + 1e-9) * 0.80).astype(np.float32)
+
+
+def _synth_hihat(sr: int, decay: float = 0.05, open_: bool = False) -> "np.ndarray":
+    import numpy as np
+    if open_:
+        decay = 0.22
+    n = int(sr * decay)
+    t = np.linspace(0, decay, n, endpoint=False)
+    noise = np.random.randn(n).astype(np.float32)
+    # high-pass: difference filter approximation
+    filtered = np.diff(noise, prepend=noise[0])
+    env = np.exp(-30 * t if not open_ else -8 * t).astype(np.float32)
+    wave = filtered * env
+    return (wave / np.max(np.abs(wave) + 1e-9) * 0.55).astype(np.float32)
+
+
+def _synth_clap(sr: int) -> "np.ndarray":
+    import numpy as np
+    decay = 0.12
+    n = int(sr * decay)
+    t = np.linspace(0, decay, n, endpoint=False)
+    noise = np.random.randn(n).astype(np.float32)
+    env = (np.exp(-40 * t) + 0.3 * np.exp(-15 * (t - 0.01).clip(0))).astype(np.float32)
+    wave = noise * env
+    return (wave / np.max(np.abs(wave) + 1e-9) * 0.65).astype(np.float32)
+
+
+def _synth_bass_note(sr: int, freq: float, dur: float, genre: str) -> "np.ndarray":
+    import numpy as np
+    n = int(sr * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    if genre in ("hiphop", "lofi", "trap"):
+        wave = (np.sin(2 * np.pi * freq * t) * 0.7
+                + np.sin(2 * np.pi * freq * 2 * t) * 0.2
+                + np.sin(2 * np.pi * freq * 3 * t) * 0.1)
+    else:
+        # sawtooth-ish (summed harmonics)
+        wave = sum(np.sin(2 * np.pi * freq * k * t) / k
+                   for k in range(1, 6))
+    env = np.exp(-3 * t).astype(np.float32)
+    wave = (wave * env).astype(np.float32)
+    return (wave / np.max(np.abs(wave) + 1e-9) * 0.55).astype(np.float32)
+
+
+def _synth_pad(sr: int, root_hz: float, scale: str, duration: int) -> "np.ndarray":
+    import numpy as np
+    intervals = [0, 3, 7, 10] if scale == "minor" else [0, 4, 7, 11]
+    freqs = [root_hz * 2 ** (i / 12) for i in intervals]
+    n = duration * sr
+    t = np.linspace(0, duration, n, endpoint=False)
+    pad = np.zeros(n, dtype=np.float32)
+    lfo = 0.5 + 0.5 * np.sin(2 * np.pi * 0.25 * t)
+    for freq in freqs:
+        pad += np.sin(2 * np.pi * freq * t).astype(np.float32)
+        pad += 0.3 * np.sin(2 * np.pi * freq * 1.005 * t).astype(np.float32)
+    pad *= lfo
+    return (pad / np.max(np.abs(pad) + 1e-9) * 0.18).astype(np.float32)
+
+
+def _place(buf: "np.ndarray", sample: "np.ndarray", offset: int) -> None:
+    end = min(offset + len(sample), len(buf))
+    chunk = sample[: end - offset]
+    buf[offset: offset + len(chunk)] += chunk
+
+
+def _generate_beat(prompt: str, duration: int) -> bytes:
     import io
-    from pydub import AudioSegment  # type: ignore
+    import numpy as np
+    from scipy.io import wavfile  # type: ignore
 
-    segments = []
-    for raw in wav_chunks:
-        seg = AudioSegment.from_file(io.BytesIO(raw), format="wav")
-        segments.append(seg)
+    np.random.seed(abs(hash(prompt)) % (2 ** 31))
 
-    merged = segments[0]
-    for seg in segments[1:]:
-        merged = merged.append(seg, crossfade=crossfade_ms)
+    SR = 44100
+    params = _detect_genre_params(prompt)
+    bpm = params["bpm"]
+    genre = params["genre"]
+    scale = params["scale"]
 
+    spb = int(SR * 60 / bpm)   # samples per beat
+    total = duration * SR
+    mix = np.zeros(total, dtype=np.float32)
+
+    # Pre-render drum sounds
+    kick  = _synth_kick(SR)
+    snare = _synth_snare(SR)
+    hh_c  = _synth_hihat(SR, open_=False)
+    hh_o  = _synth_hihat(SR, open_=True)
+    clap  = _synth_clap(SR)
+
+    # Root frequency (A2 = 110 Hz typical bass root)
+    root_hz = 110.0
+
+    # Genre-specific patterns (16-step grid, 1 step = spb/4 samples)
+    step = spb // 4
+
+    PATTERNS: dict[str, dict[str, list[int]]] = {
+        "house": {
+            "kick":  [0, 4, 8, 12],
+            "snare": [4, 12],
+            "hh_c":  [0, 2, 4, 6, 8, 10, 12, 14],
+            "hh_o":  [6, 14],
+        },
+        "techno": {
+            "kick":  [0, 4, 8, 12],
+            "snare": [4, 8, 12],
+            "hh_c":  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+            "hh_o":  [],
+        },
+        "dnb": {
+            "kick":  [0, 10],
+            "snare": [4, 12],
+            "hh_c":  [0, 2, 4, 6, 8, 10, 12, 14],
+            "hh_o":  [3, 7, 11, 15],
+        },
+        "trap": {
+            "kick":  [0, 6, 8, 14],
+            "snare": [],
+            "clap":  [4, 12],
+            "hh_c":  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+            "hh_o":  [7, 15],
+        },
+        "hiphop": {
+            "kick":  [0, 6, 10],
+            "snare": [4, 12],
+            "hh_c":  [0, 2, 4, 6, 8, 10, 12, 14],
+            "hh_o":  [],
+        },
+        "trance": {
+            "kick":  [0, 4, 8, 12],
+            "snare": [4, 12],
+            "hh_c":  [0, 2, 4, 6, 8, 10, 12, 14],
+            "hh_o":  [6],
+        },
+        "dubstep": {
+            "kick":  [0, 12],
+            "snare": [8],
+            "hh_c":  [0, 4, 8, 12],
+            "hh_o":  [6, 14],
+        },
+        "lofi": {
+            "kick":  [0, 8],
+            "snare": [4, 12],
+            "hh_c":  [0, 3, 6, 9, 12, 15],
+            "hh_o":  [],
+        },
+        "ambient": {
+            "kick":  [0, 8],
+            "snare": [],
+            "hh_c":  [0, 4, 8, 12],
+            "hh_o":  [6],
+        },
+        "pop": {
+            "kick":  [0, 4, 8, 12],
+            "snare": [4, 12],
+            "hh_c":  [0, 2, 4, 6, 8, 10, 12, 14],
+            "hh_o":  [],
+        },
+    }
+
+    pat = PATTERNS.get(genre, PATTERNS["house"])
+    bar_len = step * 16  # 1 bar = 16 steps
+
+    sound_map = {"kick": kick, "snare": snare, "hh_c": hh_c, "hh_o": hh_o, "clap": clap}
+    bar = 0
+    pos = 0
+    while pos < total:
+        for inst, steps in pat.items():
+            snd = sound_map.get(inst)
+            if snd is None:
+                continue
+            for s in steps:
+                offset = pos + s * step
+                if offset < total:
+                    # slight humanisation ±2 ms
+                    jitter = int(np.random.randint(-int(SR * 0.002), int(SR * 0.002)))
+                    _place(mix, snd, max(0, offset + jitter))
+        pos += bar_len
+        bar += 1
+
+    # Bass line (simple 2-bar pattern)
+    minor_steps = [0, 3, 7, 10, 12]
+    major_steps = [0, 4, 7, 11, 12]
+    note_pool = minor_steps if scale == "minor" else major_steps
+    bass_pos = 0
+    beat_dur = 60.0 / bpm
+    while bass_pos < total:
+        note_idx = (bass_pos // spb) % len(note_pool)
+        semitone = note_pool[note_idx]
+        freq = root_hz * 2 ** (semitone / 12)
+        note_samples = _synth_bass_note(SR, freq, beat_dur * 0.9, genre)
+        _place(mix, note_samples * 0.7, bass_pos)
+        bass_pos += spb
+
+    # Atmospheric pad (quiet, only for melodic genres)
+    if genre not in ("techno", "dnb"):
+        pad = _synth_pad(SR, root_hz * 2, scale, duration)
+        mix += pad[: total]
+
+    # Limiter / normalise
+    peak = np.max(np.abs(mix))
+    if peak > 0:
+        mix = mix / peak * 0.92
+
+    # Convert to 16-bit PCM WAV
+    pcm = (mix * 32767).astype(np.int16)
     buf = io.BytesIO()
-    merged.export(buf, format="wav")
+    wavfile.write(buf, SR, pcm)
     return buf.getvalue()
 
 
 def _run_musicgen(job_id: str, prompt: str, duration: int) -> None:
-    """Background thread: generates audio in chunks and stitches them."""
-    hf_token = os.environ.get("HUGGINGFACE_TOKEN", "")
-    if not hf_token:
-        _set_job(job_id, status="error", progress=0,
-                 message="HUGGINGFACE_TOKEN not configured on server")
-        return
-
-    _set_job(job_id, status="running", progress=5, message="Запускаем генерацию…")
-
-    # Split into chunks of up to 45 s so each HF call stays within timeout
-    CHUNK_SEC = 45
-    n_chunks = max(1, (duration + CHUNK_SEC - 1) // CHUNK_SEC)
-    chunk_sec = duration // n_chunks  # distribute evenly
-
-    wav_chunks: list[bytes] = []
-    for i in range(n_chunks):
-        pct_start = 10 + int(i / n_chunks * 80)
-        pct_end   = 10 + int((i + 1) / n_chunks * 80)
-        if n_chunks > 1:
-            _set_job(job_id, status="running", progress=pct_start,
-                     message=f"Генерируем часть {i + 1}/{n_chunks} (~{chunk_sec} сек)…")
-        else:
-            _set_job(job_id, status="running", progress=20,
-                     message=f"Генерируем {chunk_sec} сек аудио — занимает 30–90 с…")
-        try:
-            raw = _hf_musicgen_chunk(prompt, chunk_sec, hf_token)
-            wav_chunks.append(raw)
-            _set_job(job_id, progress=pct_end,
-                     message=f"Часть {i + 1}/{n_chunks} готова")
-        except RuntimeError as exc:
-            _set_job(job_id, status="error", progress=0, message=str(exc))
-            return
-        except Exception as exc:
-            _set_job(job_id, status="error", progress=0, message=str(exc))
-            return
-
-    # Stitch if more than one chunk
-    _set_job(job_id, status="running", progress=92, message="Склеиваем части…")
+    """Background thread: synthesises a beat procedurally (no external API)."""
     try:
-        if len(wav_chunks) == 1:
-            final_bytes = wav_chunks[0]
-        else:
-            final_bytes = _stitch_wav_chunks(wav_chunks, crossfade_ms=2000)
+        _set_job(job_id, status="running", progress=10,
+                 message="Анализируем жанр и темп…")
+        params = _detect_genre_params(prompt)
+        _set_job(job_id, status="running", progress=35,
+                 message=f"Синтезируем барабаны ({params['bpm']} BPM)…")
+        _set_job(job_id, status="running", progress=60,
+                 message="Генерируем бас и атмосферу…")
+        wav_bytes = _generate_beat(prompt, duration)
+        _set_job(job_id, status="running", progress=90,
+                 message="Финальная обработка…")
+        out_path = OUTPUT_DIR / f"musicgen-{job_id}.wav"
+        out_path.write_bytes(wav_bytes)
+        _set_job(job_id, status="done", progress=100, message="Бит готов!",
+                 output_path=str(out_path),
+                 duration_min=round(duration / 60, 2))
     except Exception as exc:
-        _set_job(job_id, status="error", progress=0,
-                 message=f"Ошибка склейки: {exc}")
-        return
-
-    out_path = OUTPUT_DIR / f"musicgen-{job_id}.wav"
-    out_path.write_bytes(final_bytes)
-    _set_job(job_id, status="done", progress=100, message="Готово!",
-             output_path=str(out_path),
-             duration_min=round(duration / 60, 2))
+        logger.exception("beat generation failed")
+        _set_job(job_id, status="error", progress=0, message=str(exc))
 
 
 @app.post("/audio/musicgen")
