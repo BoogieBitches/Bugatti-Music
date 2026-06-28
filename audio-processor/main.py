@@ -609,29 +609,29 @@ class MusicGenRequest(BaseModel):
 
 def _hf_musicgen_chunk(prompt: str, chunk_sec: int, hf_token: str) -> bytes:
     """Call HF MusicGen for a single chunk; returns raw WAV bytes."""
-    import json as _json
+    import requests as _requests
 
     max_tokens = max(256, min(chunk_sec * 51, 3200))
     hf_url = "https://api-inference.huggingface.co/models/facebook/musicgen-small"
-    hf_headers = {
+    headers = {
         "Authorization": f"Bearer {hf_token}",
         "Content-Type": "application/json",
     }
-    payload = _json.dumps({
+    payload = {
         "inputs": prompt,
         "parameters": {"max_new_tokens": max_tokens},
-    }).encode()
-    req_obj = urllib.request.Request(
-        hf_url, data=payload, headers=hf_headers, method="POST"
-    )
+    }
     try:
-        with urllib.request.urlopen(req_obj, timeout=150) as resp:
-            return resp.read()
-    except urllib.error.HTTPError as exc:
-        err_text = exc.read().decode(errors="replace")[:200]
-        if exc.code == 503:
-            raise RuntimeError("Model loading on HuggingFace — wait 20 s and try again")
-        raise RuntimeError(f"HuggingFace error {exc.code}: {err_text}")
+        resp = _requests.post(hf_url, headers=headers, json=payload, timeout=150)
+        if resp.status_code == 503:
+            raise RuntimeError("Model loading on HuggingFace — подожди 20 с и попробуй снова")
+        if resp.status_code != 200:
+            raise RuntimeError(f"HuggingFace error {resp.status_code}: {resp.text[:200]}")
+        return resp.content
+    except _requests.exceptions.ConnectionError as exc:
+        raise RuntimeError(f"Нет соединения с HuggingFace: {exc}")
+    except _requests.exceptions.Timeout:
+        raise RuntimeError("HuggingFace API timeout — попробуй ещё раз")
 
 
 def _stitch_wav_chunks(wav_chunks: list[bytes], crossfade_ms: int = 2000) -> bytes:
