@@ -16,6 +16,8 @@ import asyncio
 import logging
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -600,333 +602,96 @@ def _run_generation(job_id: str, req: GenerateRequest):
         _set_job(job_id, status="error", progress=0, message=str(exc))
 
 
-# ── Beat Generator (procedural synthesis — no external API) ──────────────────
+# ── Stem Splitter (Demucs — Facebook AI, open-source) ────────────────────────
 
-class MusicGenRequest(BaseModel):
-    prompt: str
-    duration: int = 30  # seconds
-
-
-def _detect_genre_params(prompt: str) -> dict:
-    """Detect BPM, scale and genre from prompt text."""
-    p = prompt.lower()
-    if "drum & bass" in p or "dnb" in p or "jungle" in p:
-        return {"bpm": 174, "genre": "dnb", "scale": "minor"}
-    if "techno" in p:
-        return {"bpm": 140, "genre": "techno", "scale": "minor"}
-    if "trance" in p:
-        return {"bpm": 138, "genre": "trance", "scale": "minor"}
-    if "dubstep" in p:
-        return {"bpm": 140, "genre": "dubstep", "scale": "minor"}
-    if "trap" in p:
-        return {"bpm": 140, "genre": "trap", "scale": "minor"}
-    if "house" in p:
-        return {"bpm": 128, "genre": "house", "scale": "major"}
-    if "lo-fi" in p or "lofi" in p or "lo fi" in p:
-        return {"bpm": 85, "genre": "lofi", "scale": "minor"}
-    if "hip" in p or "hop" in p or "boom" in p or "bap" in p:
-        return {"bpm": 90, "genre": "hiphop", "scale": "minor"}
-    if "ambient" in p or "chill" in p or "atmospheric" in p:
-        return {"bpm": 80, "genre": "ambient", "scale": "major"}
-    if "pop" in p:
-        return {"bpm": 120, "genre": "pop", "scale": "major"}
-    # extract numeric BPM if mentioned
-    import re
-    m = re.search(r"(\d{2,3})\s*bpm", p)
-    bpm = int(m.group(1)) if m else 120
-    return {"bpm": bpm, "genre": "house", "scale": "minor"}
+STEM_NAMES = ["vocals", "drums", "bass", "other"]
+_DEMUCS_MODEL = "htdemucs"
 
 
-def _synth_kick(sr: int, decay: float = 0.45, pitch: float = 60.0) -> "np.ndarray":
-    import numpy as np
-    t = np.linspace(0, decay, int(sr * decay), endpoint=False)
-    freq = pitch * np.exp(-15 * t)
-    env = np.exp(-8 * t)
-    click = np.exp(-300 * t) * 0.6
-    wave = np.sin(2 * np.pi * freq * t) * env + click
-    return (wave / np.max(np.abs(wave) + 1e-9) * 0.95).astype(np.float32)
-
-
-def _synth_snare(sr: int, decay: float = 0.18) -> "np.ndarray":
-    import numpy as np
-    n = int(sr * decay)
-    t = np.linspace(0, decay, n, endpoint=False)
-    noise = np.random.randn(n).astype(np.float32)
-    tone = np.sin(2 * np.pi * 200 * t).astype(np.float32)
-    env = np.exp(-20 * t).astype(np.float32)
-    wave = (noise * 0.7 + tone * 0.3) * env
-    return (wave / np.max(np.abs(wave) + 1e-9) * 0.80).astype(np.float32)
-
-
-def _synth_hihat(sr: int, decay: float = 0.05, open_: bool = False) -> "np.ndarray":
-    import numpy as np
-    if open_:
-        decay = 0.22
-    n = int(sr * decay)
-    t = np.linspace(0, decay, n, endpoint=False)
-    noise = np.random.randn(n).astype(np.float32)
-    # high-pass: difference filter approximation
-    filtered = np.diff(noise, prepend=noise[0])
-    env = np.exp(-30 * t if not open_ else -8 * t).astype(np.float32)
-    wave = filtered * env
-    return (wave / np.max(np.abs(wave) + 1e-9) * 0.55).astype(np.float32)
-
-
-def _synth_clap(sr: int) -> "np.ndarray":
-    import numpy as np
-    decay = 0.12
-    n = int(sr * decay)
-    t = np.linspace(0, decay, n, endpoint=False)
-    noise = np.random.randn(n).astype(np.float32)
-    env = (np.exp(-40 * t) + 0.3 * np.exp(-15 * (t - 0.01).clip(0))).astype(np.float32)
-    wave = noise * env
-    return (wave / np.max(np.abs(wave) + 1e-9) * 0.65).astype(np.float32)
-
-
-def _synth_bass_note(sr: int, freq: float, dur: float, genre: str) -> "np.ndarray":
-    import numpy as np
-    n = int(sr * dur)
-    t = np.linspace(0, dur, n, endpoint=False)
-    if genre in ("hiphop", "lofi", "trap"):
-        wave = (np.sin(2 * np.pi * freq * t) * 0.7
-                + np.sin(2 * np.pi * freq * 2 * t) * 0.2
-                + np.sin(2 * np.pi * freq * 3 * t) * 0.1)
-    else:
-        # sawtooth-ish (summed harmonics)
-        wave = sum(np.sin(2 * np.pi * freq * k * t) / k
-                   for k in range(1, 6))
-    env = np.exp(-3 * t).astype(np.float32)
-    wave = (wave * env).astype(np.float32)
-    return (wave / np.max(np.abs(wave) + 1e-9) * 0.55).astype(np.float32)
-
-
-def _synth_pad(sr: int, root_hz: float, scale: str, duration: int) -> "np.ndarray":
-    import numpy as np
-    intervals = [0, 3, 7, 10] if scale == "minor" else [0, 4, 7, 11]
-    freqs = [root_hz * 2 ** (i / 12) for i in intervals]
-    n = duration * sr
-    t = np.linspace(0, duration, n, endpoint=False)
-    pad = np.zeros(n, dtype=np.float32)
-    lfo = 0.5 + 0.5 * np.sin(2 * np.pi * 0.25 * t)
-    for freq in freqs:
-        pad += np.sin(2 * np.pi * freq * t).astype(np.float32)
-        pad += 0.3 * np.sin(2 * np.pi * freq * 1.005 * t).astype(np.float32)
-    pad *= lfo
-    return (pad / np.max(np.abs(pad) + 1e-9) * 0.18).astype(np.float32)
-
-
-def _place(buf: "np.ndarray", sample: "np.ndarray", offset: int) -> None:
-    end = min(offset + len(sample), len(buf))
-    chunk = sample[: end - offset]
-    buf[offset: offset + len(chunk)] += chunk
-
-
-def _generate_beat(prompt: str, duration: int) -> bytes:
-    import io
-    import numpy as np
-    from scipy.io import wavfile  # type: ignore
-
-    np.random.seed(abs(hash(prompt)) % (2 ** 31))
-
-    SR = 44100
-    params = _detect_genre_params(prompt)
-    bpm = params["bpm"]
-    genre = params["genre"]
-    scale = params["scale"]
-
-    spb = int(SR * 60 / bpm)   # samples per beat
-    total = duration * SR
-    mix = np.zeros(total, dtype=np.float32)
-
-    # Pre-render drum sounds
-    kick  = _synth_kick(SR)
-    snare = _synth_snare(SR)
-    hh_c  = _synth_hihat(SR, open_=False)
-    hh_o  = _synth_hihat(SR, open_=True)
-    clap  = _synth_clap(SR)
-
-    # Root frequency (A2 = 110 Hz typical bass root)
-    root_hz = 110.0
-
-    # Genre-specific patterns (16-step grid, 1 step = spb/4 samples)
-    step = spb // 4
-
-    PATTERNS: dict[str, dict[str, list[int]]] = {
-        "house": {
-            "kick":  [0, 4, 8, 12],
-            "snare": [4, 12],
-            "hh_c":  [0, 2, 4, 6, 8, 10, 12, 14],
-            "hh_o":  [6, 14],
-        },
-        "techno": {
-            "kick":  [0, 4, 8, 12],
-            "snare": [4, 8, 12],
-            "hh_c":  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-            "hh_o":  [],
-        },
-        "dnb": {
-            "kick":  [0, 10],
-            "snare": [4, 12],
-            "hh_c":  [0, 2, 4, 6, 8, 10, 12, 14],
-            "hh_o":  [3, 7, 11, 15],
-        },
-        "trap": {
-            "kick":  [0, 6, 8, 14],
-            "snare": [],
-            "clap":  [4, 12],
-            "hh_c":  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-            "hh_o":  [7, 15],
-        },
-        "hiphop": {
-            "kick":  [0, 6, 10],
-            "snare": [4, 12],
-            "hh_c":  [0, 2, 4, 6, 8, 10, 12, 14],
-            "hh_o":  [],
-        },
-        "trance": {
-            "kick":  [0, 4, 8, 12],
-            "snare": [4, 12],
-            "hh_c":  [0, 2, 4, 6, 8, 10, 12, 14],
-            "hh_o":  [6],
-        },
-        "dubstep": {
-            "kick":  [0, 12],
-            "snare": [8],
-            "hh_c":  [0, 4, 8, 12],
-            "hh_o":  [6, 14],
-        },
-        "lofi": {
-            "kick":  [0, 8],
-            "snare": [4, 12],
-            "hh_c":  [0, 3, 6, 9, 12, 15],
-            "hh_o":  [],
-        },
-        "ambient": {
-            "kick":  [0, 8],
-            "snare": [],
-            "hh_c":  [0, 4, 8, 12],
-            "hh_o":  [6],
-        },
-        "pop": {
-            "kick":  [0, 4, 8, 12],
-            "snare": [4, 12],
-            "hh_c":  [0, 2, 4, 6, 8, 10, 12, 14],
-            "hh_o":  [],
-        },
-    }
-
-    pat = PATTERNS.get(genre, PATTERNS["house"])
-    bar_len = step * 16  # 1 bar = 16 steps
-
-    sound_map = {"kick": kick, "snare": snare, "hh_c": hh_c, "hh_o": hh_o, "clap": clap}
-    bar = 0
-    pos = 0
-    while pos < total:
-        for inst, steps in pat.items():
-            snd = sound_map.get(inst)
-            if snd is None:
-                continue
-            for s in steps:
-                offset = pos + s * step
-                if offset < total:
-                    # slight humanisation ±2 ms
-                    jitter = int(np.random.randint(-int(SR * 0.002), int(SR * 0.002)))
-                    _place(mix, snd, max(0, offset + jitter))
-        pos += bar_len
-        bar += 1
-
-    # Bass line (simple 2-bar pattern)
-    minor_steps = [0, 3, 7, 10, 12]
-    major_steps = [0, 4, 7, 11, 12]
-    note_pool = minor_steps if scale == "minor" else major_steps
-    bass_pos = 0
-    beat_dur = 60.0 / bpm
-    while bass_pos < total:
-        note_idx = (bass_pos // spb) % len(note_pool)
-        semitone = note_pool[note_idx]
-        freq = root_hz * 2 ** (semitone / 12)
-        note_samples = _synth_bass_note(SR, freq, beat_dur * 0.9, genre)
-        _place(mix, note_samples * 0.7, bass_pos)
-        bass_pos += spb
-
-    # Atmospheric pad (quiet, only for melodic genres)
-    if genre not in ("techno", "dnb"):
-        pad = _synth_pad(SR, root_hz * 2, scale, duration)
-        mix += pad[: total]
-
-    # Limiter / normalise
-    peak = np.max(np.abs(mix))
-    if peak > 0:
-        mix = mix / peak * 0.92
-
-    # Convert to 16-bit PCM WAV
-    pcm = (mix * 32767).astype(np.int16)
-    buf = io.BytesIO()
-    wavfile.write(buf, SR, pcm)
-    return buf.getvalue()
-
-
-def _run_musicgen(job_id: str, prompt: str, duration: int) -> None:
-    """Background thread: synthesises a beat procedurally (no external API)."""
+def _run_stem_split(job_id: str, input_path: str, out_dir: Path) -> None:
+    """Background thread: run Demucs to separate stems."""
     try:
-        _set_job(job_id, status="running", progress=10,
-                 message="Анализируем жанр и темп…")
-        params = _detect_genre_params(prompt)
-        _set_job(job_id, status="running", progress=35,
-                 message=f"Синтезируем барабаны ({params['bpm']} BPM)…")
-        _set_job(job_id, status="running", progress=60,
-                 message="Генерируем бас и атмосферу…")
-        wav_bytes = _generate_beat(prompt, duration)
-        _set_job(job_id, status="running", progress=90,
-                 message="Финальная обработка…")
-        out_path = OUTPUT_DIR / f"musicgen-{job_id}.wav"
-        out_path.write_bytes(wav_bytes)
-        _set_job(job_id, status="done", progress=100, message="Бит готов!",
-                 output_path=str(out_path),
-                 duration_min=round(duration / 60, 2))
+        _set_job(job_id, status="running", progress=5,
+                 message="Подготовка (первый запуск загружает модель ~300 МБ)…")
+        input_stem = Path(input_path).stem
+        cmd = [
+            sys.executable, "-m", "demucs",
+            "-n", _DEMUCS_MODEL,
+            "--out", str(out_dir),
+            input_path,
+        ]
+        _set_job(job_id, status="running", progress=15,
+                 message="Demucs анализирует трек… (1–5 мин на CPU)")
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        if proc.returncode != 0:
+            raise RuntimeError(f"Demucs failed: {(proc.stderr or proc.stdout)[-600:]}")
+
+        stems_dir = out_dir / _DEMUCS_MODEL / input_stem
+        if not stems_dir.exists():
+            raise RuntimeError("Stem files not found after processing")
+
+        _set_job(job_id, status="done", progress=100, message="Стемы готовы!",
+                 output_path=str(stems_dir))
+    except subprocess.TimeoutExpired:
+        _set_job(job_id, status="error", progress=0,
+                 message="Превышено время обработки (трек слишком длинный?)")
     except Exception as exc:
-        logger.exception("beat generation failed")
+        logger.exception("stem split failed job=%s", job_id)
         _set_job(job_id, status="error", progress=0, message=str(exc))
+    finally:
+        try:
+            Path(input_path).unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
-@app.post("/audio/musicgen")
-async def musicgen_start(req: MusicGenRequest):
-    """Submit a MusicGen job; returns job_id for polling via /audio/jobs/{id}."""
-    if not req.prompt.strip():
-        raise HTTPException(422, "prompt must not be empty")
-    duration = max(5, min(req.duration, 120))
+@app.post("/audio/stems")
+async def stems_start(file: UploadFile = File(...)):
+    """Upload audio file → start Demucs stem separation → return job_id."""
+    suffix = Path(file.filename or "audio.mp3").suffix or ".mp3"
     job_id = uuid.uuid4().hex
+
+    input_dir = OUTPUT_DIR / "stems_input"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    input_path = input_dir / f"{job_id}{suffix}"
+
+    with input_path.open("wb") as fh:
+        shutil.copyfileobj(file.file, fh)
+
+    out_dir = OUTPUT_DIR / "stems" / job_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+
     job = Job(
-        job_id=job_id,
-        status="queued",
-        progress=0,
-        message="Queued…",
-        output_path=None,
-        duration_min=None,
-        track_count=0,
+        job_id=job_id, status="queued", progress=0, message="В очереди…",
+        output_path=None, duration_min=None, track_count=0,
     )
     with _jobs_lock:
         _jobs[job_id] = job
+
     threading.Thread(
-        target=_run_musicgen, args=(job_id, req.prompt.strip(), duration), daemon=True
+        target=_run_stem_split,
+        args=(job_id, str(input_path), out_dir),
+        daemon=True,
     ).start()
     return {"job_id": job_id}
 
 
-@app.get("/audio/musicgen/{job_id}/download")
-async def musicgen_download(job_id: str):
-    """Stream the finished WAV for a completed MusicGen job."""
+@app.get("/audio/stems/{job_id}/{stem}")
+async def stems_download(job_id: str, stem: str):
+    """Stream a finished stem WAV (vocals / drums / bass / other)."""
+    if stem not in STEM_NAMES:
+        raise HTTPException(400, f"stem must be one of {STEM_NAMES}")
     with _jobs_lock:
         job = _jobs.get(job_id)
     if not job:
         raise HTTPException(404, "Job not found")
     if job.status != "done" or not job.output_path:
         raise HTTPException(409, f"Job not ready (status={job.status})")
-    out = Path(job.output_path)
-    if not out.exists():
-        raise HTTPException(410, "File expired — please regenerate")
-    return FileResponse(str(out), media_type="audio/wav",
-                        filename=f"bugatti-beat-{job_id[:8]}.wav")
+    stem_file = Path(job.output_path) / f"{stem}.wav"
+    if not stem_file.exists():
+        raise HTTPException(410, "Stem file not found — please re-upload")
+    return FileResponse(str(stem_file), media_type="audio/wav",
+                        filename=f"bugatti-{stem}-{job_id[:8]}.wav")
 
 
 if __name__ == "__main__":
