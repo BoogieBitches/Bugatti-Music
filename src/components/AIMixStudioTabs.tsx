@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AIMixStudio } from "./AIMixStudio";
-import { BeatGenerator } from "./BeatGenerator";
+import { StemSplitter } from "./StemSplitter";
 
 interface Props {
   userRole?: "user" | "admin";
@@ -12,7 +12,7 @@ interface Props {
 }
 
 export function AIMixStudioTabs(props: Props) {
-  const [tab, setTab] = useState<"mix" | "beat">("mix");
+  const [tab, setTab] = useState<"mix" | "stems">("mix");
 
   return (
     <div className="w-full">
@@ -30,15 +30,15 @@ export function AIMixStudioTabs(props: Props) {
           <span>Mix Studio</span>
         </button>
         <button
-          onClick={() => setTab("beat")}
+          onClick={() => setTab("stems")}
           className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-bold
             transition-all duration-200
-            ${tab === "beat"
+            ${tab === "stems"
               ? "bg-[var(--accent)] text-black shadow-lg"
               : "text-white/50 hover:text-white"}`}
         >
-          <span>🎹</span>
-          <span>Beat Generator</span>
+          <span>✂️</span>
+          <span>Stem Splitter</span>
         </button>
       </div>
 
@@ -46,7 +46,7 @@ export function AIMixStudioTabs(props: Props) {
       {tab === "mix" ? (
         <AIMixStudio {...props} />
       ) : (
-        <BeatGenerator />
+        <StemSplitter />
       )}
     </div>
   );
