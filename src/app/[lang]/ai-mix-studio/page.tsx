@@ -1,6 +1,6 @@
 import { isLocale } from "@/i18n/config";
 import { notFound } from "next/navigation";
-import { AIMixStudio } from "@/components/AIMixStudio";
+import { AIMixStudioTabs } from "@/components/AIMixStudioTabs";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -37,7 +37,7 @@ export default async function AIMixStudioPage({
   }
 
   return (
-    <AIMixStudio
+    <AIMixStudioTabs
       userRole={role}
       isPremium={isPremium}
       generationsUsed={generationsUsed}
