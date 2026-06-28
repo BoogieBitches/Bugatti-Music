@@ -600,6 +600,155 @@ def _run_generation(job_id: str, req: GenerateRequest):
         _set_job(job_id, status="error", progress=0, message=str(exc))
 
 
+# ── MusicGen (HuggingFace Inference API) ─────────────────────────────────────
+
+class MusicGenRequest(BaseModel):
+    prompt: str
+    duration: int = 10  # seconds, 5–30
+
+
+def _hf_musicgen_chunk(prompt: str, chunk_sec: int, hf_token: str) -> bytes:
+    """Call HF MusicGen for a single chunk; returns raw WAV bytes."""
+    import json as _json
+
+    max_tokens = max(256, min(chunk_sec * 51, 3200))
+    hf_url = "https://api-inference.huggingface.co/models/facebook/musicgen-small"
+    hf_headers = {
+        "Authorization": f"Bearer {hf_token}",
+        "Content-Type": "application/json",
+    }
+    payload = _json.dumps({
+        "inputs": prompt,
+        "parameters": {"max_new_tokens": max_tokens},
+    }).encode()
+    req_obj = urllib.request.Request(
+        hf_url, data=payload, headers=hf_headers, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req_obj, timeout=150) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as exc:
+        err_text = exc.read().decode(errors="replace")[:200]
+        if exc.code == 503:
+            raise RuntimeError("Model loading on HuggingFace — wait 20 s and try again")
+        raise RuntimeError(f"HuggingFace error {exc.code}: {err_text}")
+
+
+def _stitch_wav_chunks(wav_chunks: list[bytes], crossfade_ms: int = 2000) -> bytes:
+    """Merge WAV byte-strings into one WAV with crossfade using pydub."""
+    import io
+    from pydub import AudioSegment  # type: ignore
+
+    segments = []
+    for raw in wav_chunks:
+        seg = AudioSegment.from_file(io.BytesIO(raw), format="wav")
+        segments.append(seg)
+
+    merged = segments[0]
+    for seg in segments[1:]:
+        merged = merged.append(seg, crossfade=crossfade_ms)
+
+    buf = io.BytesIO()
+    merged.export(buf, format="wav")
+    return buf.getvalue()
+
+
+def _run_musicgen(job_id: str, prompt: str, duration: int) -> None:
+    """Background thread: generates audio in chunks and stitches them."""
+    hf_token = os.environ.get("HUGGINGFACE_TOKEN", "")
+    if not hf_token:
+        _set_job(job_id, status="error", progress=0,
+                 message="HUGGINGFACE_TOKEN not configured on server")
+        return
+
+    _set_job(job_id, status="running", progress=5, message="Запускаем генерацию…")
+
+    # Split into chunks of up to 45 s so each HF call stays within timeout
+    CHUNK_SEC = 45
+    n_chunks = max(1, (duration + CHUNK_SEC - 1) // CHUNK_SEC)
+    chunk_sec = duration // n_chunks  # distribute evenly
+
+    wav_chunks: list[bytes] = []
+    for i in range(n_chunks):
+        pct_start = 10 + int(i / n_chunks * 80)
+        pct_end   = 10 + int((i + 1) / n_chunks * 80)
+        if n_chunks > 1:
+            _set_job(job_id, status="running", progress=pct_start,
+                     message=f"Генерируем часть {i + 1}/{n_chunks} (~{chunk_sec} сек)…")
+        else:
+            _set_job(job_id, status="running", progress=20,
+                     message=f"Генерируем {chunk_sec} сек аудио — занимает 30–90 с…")
+        try:
+            raw = _hf_musicgen_chunk(prompt, chunk_sec, hf_token)
+            wav_chunks.append(raw)
+            _set_job(job_id, progress=pct_end,
+                     message=f"Часть {i + 1}/{n_chunks} готова")
+        except RuntimeError as exc:
+            _set_job(job_id, status="error", progress=0, message=str(exc))
+            return
+        except Exception as exc:
+            _set_job(job_id, status="error", progress=0, message=str(exc))
+            return
+
+    # Stitch if more than one chunk
+    _set_job(job_id, status="running", progress=92, message="Склеиваем части…")
+    try:
+        if len(wav_chunks) == 1:
+            final_bytes = wav_chunks[0]
+        else:
+            final_bytes = _stitch_wav_chunks(wav_chunks, crossfade_ms=2000)
+    except Exception as exc:
+        _set_job(job_id, status="error", progress=0,
+                 message=f"Ошибка склейки: {exc}")
+        return
+
+    out_path = OUTPUT_DIR / f"musicgen-{job_id}.wav"
+    out_path.write_bytes(final_bytes)
+    _set_job(job_id, status="done", progress=100, message="Готово!",
+             output_path=str(out_path),
+             duration_min=round(duration / 60, 2))
+
+
+@app.post("/audio/musicgen")
+async def musicgen_start(req: MusicGenRequest):
+    """Submit a MusicGen job; returns job_id for polling via /audio/jobs/{id}."""
+    if not req.prompt.strip():
+        raise HTTPException(422, "prompt must not be empty")
+    duration = max(5, min(req.duration, 120))
+    job_id = uuid.uuid4().hex
+    job = Job(
+        job_id=job_id,
+        status="queued",
+        progress=0,
+        message="Queued…",
+        output_path=None,
+        duration_min=None,
+        track_count=0,
+    )
+    with _jobs_lock:
+        _jobs[job_id] = job
+    threading.Thread(
+        target=_run_musicgen, args=(job_id, req.prompt.strip(), duration), daemon=True
+    ).start()
+    return {"job_id": job_id}
+
+
+@app.get("/audio/musicgen/{job_id}/download")
+async def musicgen_download(job_id: str):
+    """Stream the finished WAV for a completed MusicGen job."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job.status != "done" or not job.output_path:
+        raise HTTPException(409, f"Job not ready (status={job.status})")
+    out = Path(job.output_path)
+    if not out.exists():
+        raise HTTPException(410, "File expired — please regenerate")
+    return FileResponse(str(out), media_type="audio/wav",
+                        filename=f"bugatti-beat-{job_id[:8]}.wav")
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8001))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
