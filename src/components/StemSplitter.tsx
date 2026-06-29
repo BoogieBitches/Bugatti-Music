@@ -4,6 +4,9 @@ import { useState, useRef, useCallback } from "react";
 
 const RAILWAY_URL = "https://vivacious-celebration-production-9ee8.up.railway.app";
 
+const MAX_MB = 50;
+const MAX_BYTES = MAX_MB * 1024 * 1024;
+
 const STEMS = [
   { key: "vocals", label: "Вокал",     icon: "🎤", grad: "from-pink-500/20 to-purple-500/20",   border: "border-pink-500/40" },
   { key: "drums",  label: "Барабаны",  icon: "🥁", grad: "from-orange-500/20 to-red-500/20",    border: "border-orange-500/40" },
@@ -19,6 +22,7 @@ interface JobStatus {
 
 export function StemSplitter() {
   const [file, setFile]           = useState<File | null>(null);
+  const [sizeError, setSizeError] = useState(false);
   const [dragging, setDragging]   = useState(false);
   const [jobId, setJobId]         = useState<string | null>(null);
   const [job, setJob]             = useState<JobStatus | null>(null);
@@ -26,12 +30,22 @@ export function StemSplitter() {
   const inputRef  = useRef<HTMLInputElement>(null);
   const pollRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const pickFile = useCallback((f: File) => {
+    if (f.size > MAX_BYTES) {
+      setSizeError(true);
+      setFile(null);
+    } else {
+      setSizeError(false);
+      setFile(f);
+    }
+  }, []);
+
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
     const f = e.dataTransfer.files[0];
-    if (f) setFile(f);
-  }, []);
+    if (f) pickFile(f);
+  }, [pickFile]);
 
   const poll = useCallback((id: string) => {
     pollRef.current = setTimeout(async () => {
@@ -72,7 +86,7 @@ export function StemSplitter() {
 
   const reset = () => {
     if (pollRef.current) clearTimeout(pollRef.current);
-    setFile(null); setJobId(null); setJob(null); setUploading(false);
+    setFile(null); setJobId(null); setJob(null); setUploading(false); setSizeError(false);
   };
 
   const stemUrl = (stem: string) => `${RAILWAY_URL}/audio/stems/${jobId}/${stem}`;
@@ -99,7 +113,7 @@ export function StemSplitter() {
             type="file"
             accept="audio/*,.mp3,.wav,.flac,.aac,.ogg,.m4a"
             className="hidden"
-            onChange={e => e.target.files?.[0] && setFile(e.target.files[0])}
+            onChange={e => e.target.files?.[0] && pickFile(e.target.files[0])}
           />
           {file ? (
             <div className="space-y-2">
@@ -114,6 +128,17 @@ export function StemSplitter() {
               <p className="text-white/30 text-sm">MP3, WAV, FLAC, AAC, M4A — до ~10 минут</p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Size error */}
+      {sizeError && (
+        <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+          <span className="text-xl">⚠️</span>
+          <div>
+            <p className="text-red-400 font-bold text-sm">Файл слишком большой</p>
+            <p className="text-red-400/70 text-xs">Максимум {MAX_MB} МБ. Сожми трек или обрежь до нужного фрагмента.</p>
+          </div>
         </div>
       )}
 
