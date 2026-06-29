@@ -618,6 +618,9 @@ def _run_stem_split(job_id: str, input_path: str, out_dir: Path) -> None:
             sys.executable, "-m", "demucs",
             "-n", _DEMUCS_MODEL,
             "--out", str(out_dir),
+            "--segment", "7",
+            "--overlap", "0.1",
+            "-j", "1",
             input_path,
         ]
         _set_job(job_id, status="running", progress=15,
