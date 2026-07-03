@@ -605,20 +605,21 @@ def _run_generation(job_id: str, req: GenerateRequest):
 # ── Stem Splitter (Demucs — Facebook AI, open-source) ────────────────────────
 
 STEM_NAMES = ["vocals", "drums", "bass", "other"]
-_DEMUCS_MODEL = "htdemucs"
+# mdx_q: quantized MDX model — ~400 MB peak RAM vs ~1.5 GB for htdemucs
+_DEMUCS_MODEL = "mdx_q"
 
 
 def _run_stem_split(job_id: str, input_path: str, out_dir: Path) -> None:
     """Background thread: run Demucs to separate stems."""
     try:
         _set_job(job_id, status="running", progress=5,
-                 message="Подготовка (первый запуск загружает модель ~300 МБ)…")
+                 message="Подготовка (первый запуск загружает модель ~70 МБ)…")
         input_stem = Path(input_path).stem
         cmd = [
             sys.executable, "-m", "demucs",
             "-n", _DEMUCS_MODEL,
             "--out", str(out_dir),
-            "--segment", "7",
+            "--segment", "5",
             "--overlap", "0.1",
             "-j", "1",
             input_path,
@@ -627,7 +628,13 @@ def _run_stem_split(job_id: str, input_path: str, out_dir: Path) -> None:
                  message="Demucs анализирует трек… (1–5 мин на CPU)")
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
         if proc.returncode != 0:
-            raise RuntimeError(f"Demucs failed: {(proc.stderr or proc.stdout)[-600:]}")
+            combined = (proc.stderr + "\n" + proc.stdout).strip()
+            if proc.returncode in (-9, -11) or not combined:
+                raise RuntimeError(
+                    "Сервер не хватило памяти для обработки трека. "
+                    "Попробуй файл покороче (до 3 мин) или меньшего размера."
+                )
+            raise RuntimeError(f"Demucs failed: {combined[-600:]}")
 
         stems_dir = out_dir / _DEMUCS_MODEL / input_stem
         if not stems_dir.exists():
