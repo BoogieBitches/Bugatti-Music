@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 
-const RAILWAY_URL = "https://vivacious-celebration-production-9ee8.up.railway.app";
+const RAILWAY_URL = "https://bugattimusic-bugatti-stems.hf.space";
 
 const MAX_MB = 50;
 const MAX_BYTES = MAX_MB * 1024 * 1024;
